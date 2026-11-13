@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ChaosNav – Smarter Route Planner</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{--bg:#f4f6fb;--ink:#0f172a;--mut:#64748b;--line:#e2e8f0;--pri:#2563eb;--ok:#059669;--warn:#d97706;--bad:#dc2626}
+*{box-sizing:border-box}[hidden]{display:none!important}
+body{margin:0;font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:var(--bg);height:100vh;display:flex;flex-direction:column}
+header{height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;background:#0f172a;color:#fff;flex:none}
+.brand{font-size:19px;font-weight:700}.brand b{color:#34d399}
+.chip{font-size:12px;padding:4px 10px;border-radius:99px;background:#1e293b}
+main{flex:1;display:flex;min-height:0}
+#panel{width:420px;overflow:auto;padding:14px;flex:none}
+#map{flex:1;min-height:0}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px;box-shadow:0 1px 2px #0001}
+h2{font-size:16px;margin:0 0 8px}h3{font-size:12px;margin:12px 0 6px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em}
+input,select,textarea,button{font:inherit}
+input[type=text],textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px;background:#fff}
+.btn{width:100%;padding:11px;border:0;border-radius:10px;background:var(--pri);color:#fff;font-weight:600;cursor:pointer}.btn:hover{filter:brightness(1.1)}.btn:disabled{opacity:.6}
+.btn.alt{background:#fff;color:var(--ink);border:1px solid var(--line)}.btn.warn{background:var(--warn)}
+.seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:10px}
+.seg button{flex:1;padding:9px 4px;border:0;background:#fff;cursor:pointer}.seg button.on{background:var(--pri);color:#fff}
+#msg{color:var(--warn);min-height:18px;margin:0 0 8px;font-size:13px}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+.tile{background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px;cursor:pointer}.tile small{color:var(--mut);display:block}.tile b{font-size:15px}
+.rt{display:flex;gap:10px;background:#fff;border:2px solid var(--line);border-radius:12px;padding:10px;margin-bottom:8px;cursor:pointer}
+.rt.on{border-color:var(--pri)}.rt .bar{width:6px;border-radius:4px;flex:none}
+.big{font-size:17px;font-weight:700}.big span{font-size:13px;font-weight:400;color:var(--mut)}.mut{color:var(--mut);font-size:12px}
+.badge{font-size:11px;padding:2px 7px;border-radius:99px;margin-left:4px;color:#fff;vertical-align:middle}
+.rt ul{margin:6px 0 0;padding-left:18px;font-size:12px}
+.types{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.t{padding:10px;border:2px solid var(--line);border-radius:10px;background:#fff;cursor:pointer;text-align:left}.t.on{border-color:var(--pri);background:#eff6ff}
+.info{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px;font-size:13px;margin:10px 0}
+.loc{padding:10px;border:1px dashed var(--line);border-radius:8px;margin-bottom:8px;background:#f8fafc}
+.arow{display:flex;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px}
+.pin{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;border:2px solid #fff;box-shadow:0 1px 5px #0006;font-size:15px}
+.rl{display:inline-block;color:#fff;font-weight:700;font-size:12px;padding:2px 8px;border-radius:99px;white-space:nowrap;box-shadow:0 1px 4px #0006;transform:translate(-50%,-50%)}
+#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;z-index:9999;max-width:90%}
+@media(max-width:800px){main{flex-direction:column-reverse}#panel{width:100%;height:58%}#map{flex:none;height:42%}}
+</style></head><body>
+<header><div class="brand">🧭 Chaos<b>Nav</b></div><span id="sync" class="chip">connecting…</span></header>
+<main>
+<aside id="panel">
+ <!-- PAGE 1: planner + dashboard -->
+ <section id="v-plan">
+  <div class="card">
+   <h2>Plan your journey</h2>
+   <input type="text" id="from" placeholder="📍 Start (place name, or click the map)">
+   <input type="text" id="to" placeholder="🏁 Destination">
+   <div class="seg" id="modes"><button data-m="d" class="on">🚗 Drive</button><button data-m="f">🚶 Walk</button><button data-m="w">♿ Wheelchair</button></div>
+   <button class="btn" id="go">Find routes</button>
+  </div>
+  <p id="msg"></p>
+  <div id="dash"></div>
+  <button class="btn warn" id="toReport" style="margin-bottom:12px">⚠ Report an issue</button>
+  <div class="card"><h2>Active issues <span class="mut" id="cnt"></span></h2><div id="active"></div></div>
+ </section>
+ <!-- PAGE 2: report details -->
+ <section id="v-report" hidden>
+  <button class="btn alt" id="back" style="margin-bottom:12px">← Back to planner</button>
+  <div class="card">
+   <h2>Report a road issue</h2>
+   <h3>1 · What is the issue?</h3><div class="types" id="types"></div>
+   <h3>2 · Where is it?</h3>
+   <div class="loc" id="loc">👆 Click the map to drop a pin</div>
+   <button class="btn alt" id="myloc" type="button">📡 Use my current location</button>
+   <h3>3 · Details</h3>
+   <div class="seg" id="sev"><button data-s="1">Low</button><button data-s="2" class="on">Medium</button><button data-s="3">High</button></div>
+   <label class="mut">Affected radius: <b id="radv"></b></label>
+   <input type="range" id="rad" min="10" max="500" step="10" style="width:100%;margin-bottom:8px">
+   <textarea id="note" rows="3" maxlength="200" placeholder="Describe what you see (optional)"></textarea>
+   <div class="info">⏳ This report stays active for <b>48 hours</b>, is considered in everyone's route search, then is automatically removed and archived in our GitHub repository.</div>
+   <button class="btn" id="submit">Submit report</button>
+  </div>
+ </section>
+</aside>
+<div id="map"></div>
+</main>
+<div id="toast" hidden></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const TTL=48*3600e3,HARD=1e5,API='/api/reports',LK='chaosnav.local';
+// p = route penalty (seconds) per mode: d=drive f=walk w=wheelchair. >=1e5 means impassable.
+const T={
+ flood:{l:'Flood / waterlogging',e:'🌊',c:'#2563eb',r:80,p:{d:3000,f:1500,w:3000}},
+ closure:{l:'Road closure',e:'🚧',c:'#dc2626',r:60,p:{d:1e5,f:1e5,w:1e5}},
+ accident:{l:'Accident',e:'💥',c:'#f59e0b',r:50,p:{d:600,f:100,w:100}},
+ damaged:{l:'Damaged road',e:'🕳️',c:'#a16207',r:50,p:{d:600,f:300,w:1500}},
+ ramp:{l:'Missing ramp',e:'♿',c:'#9333ea',r:25,p:{d:0,f:0,w:1e5}},
+ footpath:{l:'Broken footpath',e:'🚷',c:'#db2777',r:25,p:{d:0,f:400,w:1e5}},
+ stairs:{l:'Stairs / steps',e:'🪜',c:'#0891b2',r:25,p:{d:0,f:0,w:1e5}},
+ avoid:{l:'Hard avoid zone',e:'⛔',c:'#475569',r:200,p:{d:1e5,f:1e5,w:1e5}}};
+const M={1:.6,2:1,3:1.5},SEV={1:'Low',2:'Medium',3:'High'};
+const OSRM={d:'https://router.project-osrm.org/route/v1/driving/',f:'https://routing.openstreetmap.de/routed-foot/route/v1/foot/'};
+const COL=['#2563eb','#059669','#9333ea','#ea580c','#db2777'];
+const fT=s=>{s=Math.round(s/60);return s<60?s+' min':Math.floor(s/60)+' h '+s%60+' min'};
+const fD=m=>(m/1000).toFixed(1)+' km';
+const clock=s=>new Date(Date.now()+s*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+const left=h=>{const m=Math.max(1,Math.round((h.exp-Date.now())/60000));return m>=60?Math.round(m/60)+' h':m+' min'};
+const toast=t=>{const e=$('toast');e.textContent=t;e.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>e.hidden=true,4000)};
+const msg=t=>$('msg').textContent=t||'';
+let mode='d',reports=[],remote=false,routes=[],best={},sel=0,st={from:null,to:null};
+
+// ---------- Map ----------
+const map=L.map('map').setView([12.9716,77.5946],12);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(map);
+const repL=L.layerGroup().addTo(map),routeL=L.layerGroup().addTo(map),pinL=L.layerGroup().addTo(map);
+
+// ---------- Reports: shared via API (GitHub-backed), LocalStorage fallback ----------
+const lLoad=()=>{try{return JSON.parse(localStorage.getItem(LK)||'[]')}catch(e){return[]}};
+const lSave=a=>{try{localStorage.setItem(LK,JSON.stringify(a))}catch(e){}};
+async function loadReports(){
+ try{const r=await fetch(API,{cache:'no-store'});if(!r.ok)throw 0;reports=(await r.json()).reports;remote=true}
+ catch(e){reports=lLoad();remote=false}
+ reports=reports.filter(h=>h.exp>Date.now()&&T[h.type]);
+ $('sync').textContent=remote?'🟢 Shared reports · GitHub':'🟠 Local demo mode (backend not connected)';
+ drawReports();
+}
+function drawReports(){
+ repL.clearLayers();
+ reports.forEach(h=>{const t=T[h.type];
+  L.circle([h.lat,h.lng],{radius:h.r,color:t.c,weight:2,fillOpacity:.18}).addTo(repL);
+  L.marker([h.lat,h.lng],{icon:L.divIcon({className:'',iconSize:[30,30],iconAnchor:[15,15],html:`<div class="pin" style="background:${t.c}">${t.e}</div>`})})
+   .addTo(repL).bindPopup(`<b>${t.e} ${esc(t.l)}</b><br>Severity: ${SEV[h.sev]||'Medium'}<br>${esc(h.note||'')}<br><small>Expires in ${left(h)}</small>`);
+ });
+ $('cnt').textContent='('+reports.length+')';
+ $('active').innerHTML=reports.length?reports.map((h,i)=>`<div class="arow" data-i="${i}"><span style="font-size:18px">${T[h.type].e}</span><span style="flex:1"><b>${esc(T[h.type].l)}</b><br><span class="mut">${esc(h.note||SEV[h.sev]+' severity')}</span></span><span class="mut">${left(h)} left</span></div>`).join(''):'<p class="mut">No active issues reported. Roads look clear!</p>';
+}
+$('active').onclick=e=>{const r=e.target.closest('[data-i]');if(r){const h=reports[+r.dataset.i];map.flyTo([h.lat,h.lng],16)}};
+setInterval(loadReports,60000);
+
+// ---------- Pages (hash routing) ----------
+function page(){
+ const rp=location.hash==='#/report';
+ $('v-plan').hidden=rp;$('v-report').hidden=!rp;$('map').style.cursor=rp?'crosshair':'';
+ if(!rp&&pickM){map.removeLayer(pickM);pickM=null}
+}
+$('toReport').onclick=()=>{location.hash='#/report'};
+$('back').onclick=()=>{location.hash='#/'};
+window.onhashchange=page;
+
+// ---------- Report form ----------
+let rtype='flood',sevV=2,pickLL=null,pickM=null;
+Object.entries(T).forEach(([k,v])=>{const b=document.createElement('button');b.type='button';b.className='t';b.dataset.k=k;
+ b.innerHTML=`<span style="font-size:22px">${v.e}</span><br><b>${v.l}</b>`;b.onclick=()=>setType(k);$('types').append(b)});
+function setType(k){rtype=k;document.querySelectorAll('.t').forEach(b=>b.classList.toggle('on',b.dataset.k===k));$('rad').value=T[k].r;$('radv').textContent=T[k].r+' m'}
+$('rad').oninput=()=>$('radv').textContent=$('rad').value+' m';
+setType('flood');
+$('sev').onclick=e=>{const b=e.target.closest('button');if(!b)return;sevV=+b.dataset.s;[...$('sev').children].forEach(x=>x.classList.toggle('on',x===b))};
+function setPick(ll){pickLL=ll;if(pickM)map.removeLayer(pickM);pickM=L.marker(ll).addTo(map);$('loc').innerHTML='📍 Pinned at <b>'+ll[0].toFixed(5)+', '+ll[1].toFixed(5)+'</b>'}
+$('myloc').onclick=()=>navigator.geolocation?navigator.geolocation.getCurrentPosition(p=>{const ll=[p.coords.latitude,p.coords.longitude];setPick(ll);map.setView(ll,16)},()=>toast('Location permission denied')):toast('Geolocation not supported');
+$('submit').onclick=async()=>{
+ if(!pickLL)return toast('Please click the map to choose the location first.');
+ const rep={type:rtype,lat:pickLL[0],lng:pickLL[1],r:+$('rad').value,sev:sevV,note:$('note').value.trim()};
+ $('submit').disabled=true;
+ try{
+  if(!remote)throw 0;
+  const r=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(rep)});
+  if(!r.ok)throw 0;toast('✅ Reported – now shared with all travellers for 48 hours');
+ }catch(e){
+  const a=lLoad();a.push({...rep,id:Date.now(),t:Date.now(),exp:Date.now()+TTL});lSave(a);toast('Saved on this device only (backend not connected)');
+ }
+ $('submit').disabled=false;$('note').value='';pickLL=null;$('loc').textContent='👆 Click the map to drop a pin';
+ await loadReports();location.hash='#/';
+ if(st.from&&st.to&&routes.length)plan(); // recalculate with the new report
+};
+
+// ---------- Map clicks ----------
+map.on('click',e=>{
+ const ll=[e.latlng.lat,e.latlng.lng];
+ if(location.hash==='#/report')return setPick(ll);
+ const k=!st.from?'from':!st.to?'to':'from';if(k==='from')st.to=null,$('to').value='';
+ const txt=ll[0].toFixed(5)+', '+ll[1].toFixed(5);$(k).value=txt;st[k]={ll,text:txt};pins();
+});
+function pins(){pinL.clearLayers();
+ if(st.from)L.marker(st.from.ll).addTo(pinL).bindTooltip('Start',{permanent:true,direction:'top'});
+ if(st.to)L.marker(st.to.ll).addTo(pinL).bindTooltip('Destination',{permanent:true,direction:'top'})}
+$('modes').onclick=e=>{const b=e.target.closest('button');if(!b)return;mode=b.dataset.m;[...$('modes').children].forEach(x=>x.classList.toggle('on',x===b))};
+
+// ---------- Nominatim ----------
+async function resolve(k){
+ const v=$(k).value.trim();if(!v)throw new Error('Enter both a start and a destination.');
+ if(st[k]&&st[k].text===v)return;
+ const m=v.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+ if(m)st[k]={ll:[+m[1],+m[2]],text:v};
+ else{const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(v));
+  if(!r.ok)throw new Error('Geocoder error '+r.status);const j=await r.json();
+  if(!j.length)throw new Error('Place not found: '+v);st[k]={ll:[+j[0].lat,+j[0].lon],text:v}}
+ pins();
+}
+// ---------- OSRM ----------
+async function osrm(pts){
+ const u=OSRM[mode==='d'?'d':'f']+pts.map(p=>p[1]+','+p[0]).join(';')+'?overview=full&geometries=geojson&alternatives=true';
+ const r=await fetch(u);if(!r.ok)throw new Error('Routing service error '+r.status);
+ const j=await r.json();if(j.code!=='Ok')throw new Error('No route found');
+ return j.routes.map(x=>({coords:x.geometry.coordinates.map(c=>[c[1],c[0]]),dur:x.duration,dist:x.distance}));
+}
+// ---------- Hazard assessment ----------
+function nearest(co,lat,lng){
+ const k=Math.cos(lat*Math.PI/180),Mt=111320,px=lng*k*Mt,py=lat*Mt;let best=1e12,bi=0;
+ for(let i=0;i<co.length-1;i++){
+  const ax=co[i][1]*k*Mt,ay=co[i][0]*Mt,dx=co[i+1][1]*k*Mt-ax,dy=co[i+1][0]*Mt-ay,L2=dx*dx+dy*dy;
+  let t=L2?((px-ax)*dx+(py-ay)*dy)/L2:0;t=Math.max(0,Math.min(1,t));
+  const d=Math.hypot(px-ax-t*dx,py-ay-t*dy);if(d<best){best=d;bi=i}}
+ return{d:best,i:bi};
+}
+function score(r){
+ r.hits=[];r.pen=0;r.blocked=false;
+ reports.forEach(h=>{const p=T[h.type].p[mode];if(!p)return;
+  if(nearest(r.coords,h.lat,h.lng).d<=h.r+15){r.hits.push(h);if(p>=HARD){r.blocked=true;r.pen+=HARD}else r.pen+=p*(M[h.sev]||1)}});
+ r.delay=r.blocked?0:r.pen*.25;r.eta=r.dur+r.delay;r.score=r.dur+r.pen;return r;
+}
+function detours(r){ // via-points on both sides of the first two blocking hazards
+ const out=[];
+ r.hits.slice(0,2).forEach(h=>{
+  const n=nearest(r.coords,h.lat,h.lng),a=r.coords[n.i],b=r.coords[n.i+1]||a,k=Math.cos(h.lat*Math.PI/180);
+  let dx=(b[1]-a[1])*k,dy=b[0]-a[0];const L2=Math.hypot(dx,dy)||1;dx/=L2;dy/=L2;
+  [1,-1].forEach(s=>[2.2,4].forEach(m=>{const o=(h.r*m+60)/111320;out.push([h.lat+s*dx*o,h.lng-s*dy*o/k])}));});
+ return out;
+}
+const minBy=(a,f)=>a.reduce((x,y)=>f(y)<f(x)?y:x);
+const dedupe=a=>{const o=[];a.forEach(r=>{if(!o.some(x=>Math.abs(x.dist-r.dist)<x.dist*.015&&Math.abs(x.dur-r.dur)<x.dur*.03))o.push(r)});return o};
+
+// ---------- Planner ----------
+$('go').onclick=plan;
+async function plan(){
+ $('go').disabled=true;
+ try{
+  msg('Finding places…');await resolve('from');await resolve('to');
+  const A=st.from.ll,B=st.to.ll;msg('Calculating routes…');
+  let pool=(await osrm([A,B])).map(score);
+  for(let i=0;i<2;i++){
+   const b=minBy(pool,r=>r.score);if(!b.hits.length)break;
+   msg('Looking for detours around '+b.hits.length+' reported issue(s)…');
+   for(const v of detours(b)){try{(await osrm([A,v,B])).slice(0,1).forEach(r=>pool.push(score(r)))}catch(e){}}
+  }
+  pool=dedupe(pool);
+  const f=minBy(pool,r=>r.dur),s=minBy(pool,r=>r.pen*1e6+r.dur),l=minBy(pool,r=>-r.dist),keep=new Set([f,s,l]);
+  [...pool].sort((x,y)=>x.score-y.score).forEach(r=>{if(keep.size<5)keep.add(r)});
+  routes=[...keep].sort((x,y)=>x.dur-y.dur);
+  routes.forEach((r,i)=>{r.name=String.fromCharCode(65+i);r.col=COL[i]});
+  best={f,s,l};sel=routes.indexOf(s);msg('');
+  render();map.fitBounds(L.polyline(routes[sel].coords).getBounds(),{padding:[50,50]});
+ }catch(e){msg('⚠ '+e.message)}
+ $('go').disabled=false;
+}
+function select(i){sel=i;render();map.fitBounds(L.polyline(routes[i].coords).getBounds(),{padding:[50,50]})}
+$('dash').onclick=e=>{const el=e.target.closest('[data-i]');if(el)select(+el.dataset.i)};
+
+// ---------- Rendering: dashboard + coloured alternatives ----------
+function render(){
+ const {f,s,l}=best;
+ const tile=(ic,lb,r)=>`<div class="tile" data-i="${routes.indexOf(r)}"><small>${ic} ${lb}</small><b style="color:${r.col}">Route ${r.name}</b><small>${fT(r.eta)} · ${fD(r.dist)}</small></div>`;
+ $('dash').innerHTML=`<div class="tiles">${tile('🛡','Safest',s)}${tile('⚡','Fastest',f)}${tile('📏','Longest',l)}</div>`+
+ routes.map((r,i)=>{
+  const bd=(t,c)=>`<span class="badge" style="background:${c}">${t}</span>`;
+  const d=Math.round((r.dur-f.dur)/60);
+  return `<div class="rt ${i===sel?'on':''}" data-i="${i}"><div class="bar" style="background:${r.col}"></div><div style="flex:1">
+   <div><b>Route ${r.name}</b>${r===s?bd('Safest','#059669'):''}${r===f?bd('Fastest','#2563eb'):''}${r===l?bd('Longest','#9333ea'):''}${r.blocked?bd('Blocked','#dc2626'):''}</div>
+   <div class="big">${r.blocked?'Not passable':'Arrive '+clock(r.eta)} <span>· ${fT(r.blocked?r.dur:r.eta)}</span></div>
+   <div class="mut">📏 ${fD(r.dist)} · ${r.hits.length?'⚠ '+r.hits.length+' issue'+(r.hits.length>1?'s':''):'✓ No reported issues'}${r.delay>=60?' · incl. ~'+Math.round(r.delay/60)+' min delay':''}${r!==f?' · '+(d>=0?'+':'')+d+' min vs fastest':''}</div>
+   ${i===sel&&r.hits.length?'<ul>'+r.hits.map(h=>`<li>${T[h.type].e} ${esc(T[h.type].l)}${h.note?' – '+esc(h.note):''}</li>`).join('')+'</ul>':''}
+  </div></div>`}).join('')+
+ (best.s.blocked?'<div class="info">⚠ Every route found crosses a blocked spot. Try different start/end points.</div>':'')+
+ (mode==='w'?'<p class="mut">Wheelchair mode uses OSM walking paths and avoids community-reported ramps, stairs and broken footpaths. Always verify on site.</p>':'');
+ routeL.clearLayers();let top;
+ routes.forEach((r,i)=>{const on=i===sel;
+  const p=L.polyline(r.coords,{color:r.col,weight:on?8:5,opacity:on?1:.7,dashArray:on?null:'2 9',lineCap:'round'}).addTo(routeL);p.on('click',()=>select(i));if(on)top=p;
+  const m=r.coords[Math.floor(r.coords.length*(.25+.13*i))];
+  L.marker(m,{icon:L.divIcon({className:'',iconSize:[0,0],html:`<span class="rl" style="background:${r.col}">${r.name} · ${Math.round(r.eta/60)} min</span>`})}).addTo(routeL).on('click',()=>select(i));});
+ top&&top.bringToFront();
+}
+loadReports();page();
+</script></body></html>
