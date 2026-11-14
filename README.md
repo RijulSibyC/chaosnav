@@ -1,4 +1,4 @@
-# 🧭 ChaosNav – Smarter Route Planner
+# ChaosNav – Smarter Route Planner
 
 > Traditional apps optimise for speed. ChaosNav optimises for **safety, accessibility and real conditions** by routing around hazards reported by the community.
 
@@ -7,7 +7,7 @@
 
 ---
 
-## ✨ Features
+## Features
 
 | Feature | What it does |
 |---|---|
@@ -21,7 +21,7 @@
 | **Live location** | Blue dot that moves with you, follow mode, "use my location as start". |
 | **Admin delete** | Only the software handler (password) can delete reports. |
 
-## 🧱 Tech stack
+## Tech stack
 
 | Part | Technology |
 |---|---|
@@ -35,7 +35,7 @@
 | Hosting | Netlify (auto-deploys from GitHub) |
 | Demo fallback | Browser LocalStorage |
 
-## 🔄 How it works
+## How it works
 
 ```
 User ─► Web app (Leaflet) ─► Netlify Functions ─► GitHub repo (reports)
@@ -52,7 +52,7 @@ User ─► Web app (Leaflet) ─► Netlify Functions ─► GitHub repo (repor
 7. **Expire & archive** – after 48 h it stops appearing; the hourly Action moves it to `data/archive/YYYY-MM.json`.
 8. **Moderate** – admin signs in; server checks the password and deletes the report with a commit.
 
-## 📁 Project structure
+## Project structure
 
 ```
 chaosnav/
@@ -74,7 +74,7 @@ chaosnav/
   "note": "Knee-deep water", "t": 1731580000000, "exp": 1731752800000 }
 ```
 
-## 🚀 Setup
+## Setup
 
 ### 1. Get the code on GitHub
 Fork/clone this repo, or create a new public repo named `chaosnav` and push the project:
@@ -119,10 +119,10 @@ GitHub → **Settings → Developer settings → Personal access tokens → Fine
 - Add a report → a new commit appears in `data/active.json`.
 - Test archiving: edit a report's `exp` in `data/active.json` to `1700000000000`, then **Actions → Archive expired reports → Run workflow**. It should move to `data/archive/`.
 
-## 🔐 Admin (software handler)
-Click **🔒 Admin** in the header, enter `ADMIN_PASSWORD`; 🗑 Delete buttons appear on issues. The password is checked on the server, never stored in the page. To change it, edit the variable in Netlify and redeploy.
+## Admin (software handler)
+Click **Admin** in the header, enter `ADMIN_PASSWORD`; Delete buttons appear on issues. The password is checked on the server, never stored in the page. To change it, edit the variable in Netlify and redeploy.
 
-## 🛠️ Run locally
+## Run locally
 ```bash
 npm i -g netlify-cli
 netlify login
@@ -133,7 +133,7 @@ netlify dev        # opens http://localhost:8888
 ```
 Opening `public/index.html` with VS Code Live Server also works in **local demo mode** (reports saved in the browser only).
 
-## 🔧 Updating & customising
+## Updating & customising
 Deploy any change:
 ```bash
 git add .
@@ -149,14 +149,14 @@ git push
 | Typical-traffic strength | `WD` (weekday) / `WE` (weekend) arrays in `index.html` |
 | Labels and colours | search the label text in `public/index.html` (Ctrl + Shift + F) |
 
-## ⚠️ Limitations
+## Limitations
 - Public OSRM, Photon and Nominatim servers are for light use; heavy traffic needs self-hosted servers.
 - Without a TomTom key, traffic is a typical-pattern estimate, not live.
 - Reports are not verified; one shared admin password (no individual accounts).
 - TomTom's free tier is limited (about 2,500 requests/day, shared by search and routing).
 
-## 🔮 Future scope
+## Future scope
 Automatic re-routing while travelling, voice directions, report voting and photos, using archived data to flag repeat flood spots, predictive AI and direct municipal sensor integration.
 
-## 🙏 Credits
+## Credits
 Map data © OpenStreetMap contributors · Leaflet · OSRM · Photon / Nominatim · TomTom · Netlify · GitHub
