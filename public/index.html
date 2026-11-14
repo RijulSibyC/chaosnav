@@ -396,9 +396,9 @@ async function plan(){
    for(const v of detours(b)){try{(await osrm([A,v,B])).slice(0,1).forEach(r=>{if(r.dist<=base*1.8+300&&!backtracks(r.coords))pool.push(score(r))})}catch(e){}}
   }
   pool=dedupe(pool);
-  const f=minBy(pool,r=>r.dur),s=minBy(pool,r=>r.pen*1e6+r.dur),l=minBy(pool,r=>-r.dist),keep=new Set([f,s,l]);
+  const f=minBy(pool,r=>(r.blocked?1e7:0)+r.eta),s=minBy(pool,r=>r.pen*1e6+r.eta),l=minBy(pool,r=>-r.dist),keep=new Set([f,s,l]);
   [...pool].sort((x,y)=>x.score-y.score).forEach(r=>{if(keep.size<5)keep.add(r)});
-  routes=[...keep].sort((x,y)=>x.dur-y.dur);
+  routes=[...keep].sort((x,y)=>((x.blocked?1e7:0)+x.eta)-((y.blocked?1e7:0)+y.eta));
   routes.forEach((r,i)=>{r.name=String.fromCharCode(65+i);r.col=COL[i]});
   best={f,s,l};sel=routes.indexOf(s);msg('');
   render();map.fitBounds(L.polyline(routes[sel].coords).getBounds(),{padding:[50,50]});
@@ -415,7 +415,7 @@ function render(){
  $('dash').innerHTML=`<div class="tiles">${tile('🛡','Safest',s)}${tile('⚡','Fastest',f)}${tile('📏','Longest',l)}</div>`+
  routes.map((r,i)=>{
   const bd=(t,c)=>`<span class="badge" style="background:${c}">${t}</span>`;
-  const d=Math.round((r.dur-f.dur)/60);
+  const d=Math.round((r.eta-f.eta)/60);
   return `<div class="rt ${i===sel?'on':''}" data-i="${i}"><div class="bar" style="background:${r.col}"></div><div style="flex:1">
    <div><b>Route ${r.name}</b>${r===s?bd('Safest','#059669'):''}${r===f?bd('Fastest','#2563eb'):''}${r===l?bd('Longest','#9333ea'):''}${r.blocked?bd('Blocked','#dc2626'):''}</div>
    <div class="big">${r.blocked?'Not passable':'Arrive '+clock(r.eta)} <span>· ${fT(r.blocked?r.dur:r.eta)}</span></div>
