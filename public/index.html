@@ -34,12 +34,13 @@ input[type=text],textarea{width:100%;padding:10px;border:1px solid var(--line);b
 .info{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px;font-size:13px;margin:10px 0}
 .loc{padding:10px;border:1px dashed var(--line);border-radius:8px;margin-bottom:8px;background:#f8fafc}
 .arow{display:flex;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px}
+.del{border:0;background:#fee2e2;color:#991b1b;border-radius:6px;padding:3px 8px;cursor:pointer}
 .pin{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;border:2px solid #fff;box-shadow:0 1px 5px #0006;font-size:15px}
 .rl{display:inline-block;color:#fff;font-weight:700;font-size:12px;padding:2px 8px;border-radius:99px;white-space:nowrap;box-shadow:0 1px 4px #0006;transform:translate(-50%,-50%)}
 #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;z-index:9999;max-width:90%}
 @media(max-width:800px){main{flex-direction:column-reverse}#panel{width:100%;height:58%}#map{flex:none;height:42%}}
 </style></head><body>
-<header><div class="brand">🧭 Chaos<b>Nav</b></div><span id="sync" class="chip">connecting…</span></header>
+<header><div class="brand">🧭 Chaos<b>Nav</b></div><div><button id="adminBtn" class="chip" style="border:0;color:#fff;cursor:pointer;margin-right:8px">🔒 Admin</button><span id="sync" class="chip">connecting…</span></div></header>
 <main>
 <aside id="panel">
  <!-- PAGE 1: planner + dashboard -->
@@ -112,8 +113,8 @@ const repL=L.layerGroup().addTo(map),routeL=L.layerGroup().addTo(map),pinL=L.lay
 // ---------- Reports: shared via API (GitHub-backed), LocalStorage fallback ----------
 const lLoad=()=>{try{return JSON.parse(localStorage.getItem(LK)||'[]')}catch(e){return[]}};
 const lSave=a=>{try{localStorage.setItem(LK,JSON.stringify(a))}catch(e){}};
-async function loadReports(){
- try{const r=await fetch(API,{cache:'no-store'});if(!r.ok)throw 0;reports=(await r.json()).reports;remote=true}
+async function loadReports(fresh){
+ try{const r=await fetch(API+(fresh?'?fresh=1':''),{cache:'no-store'});if(!r.ok)throw 0;reports=(await r.json()).reports;remote=true}
  catch(e){reports=lLoad();remote=false}
  reports=reports.filter(h=>h.exp>Date.now()&&T[h.type]);
  $('sync').textContent=remote?'🟢 Shared reports · GitHub':'🟠 Local demo mode (backend not connected)';
@@ -124,12 +125,31 @@ function drawReports(){
  reports.forEach(h=>{const t=T[h.type];
   L.circle([h.lat,h.lng],{radius:h.r,color:t.c,weight:2,fillOpacity:.18}).addTo(repL);
   L.marker([h.lat,h.lng],{icon:L.divIcon({className:'',iconSize:[30,30],iconAnchor:[15,15],html:`<div class="pin" style="background:${t.c}">${t.e}</div>`})})
-   .addTo(repL).bindPopup(`<b>${t.e} ${esc(t.l)}</b><br>Severity: ${SEV[h.sev]||'Medium'}<br>${esc(h.note||'')}<br><small>Expires in ${left(h)}</small>`);
+   .addTo(repL).bindPopup(`<b>${t.e} ${esc(t.l)}</b><br>Severity: ${SEV[h.sev]||'Medium'}<br>${esc(h.note||'')}<br><small>Expires in ${left(h)}</small>${adminKey?`<br><button class="del" onclick="delReport('${esc(h.id)}')">🗑 Delete (admin)</button>`:''}`);
  });
  $('cnt').textContent='('+reports.length+')';
- $('active').innerHTML=reports.length?reports.map((h,i)=>`<div class="arow" data-i="${i}"><span style="font-size:18px">${T[h.type].e}</span><span style="flex:1"><b>${esc(T[h.type].l)}</b><br><span class="mut">${esc(h.note||SEV[h.sev]+' severity')}</span></span><span class="mut">${left(h)} left</span></div>`).join(''):'<p class="mut">No active issues reported. Roads look clear!</p>';
+ $('active').innerHTML=reports.length?reports.map((h,i)=>`<div class="arow" data-i="${i}"><span style="font-size:18px">${T[h.type].e}</span><span style="flex:1"><b>${esc(T[h.type].l)}</b><br><span class="mut">${esc(h.note||SEV[h.sev]+' severity')}</span></span><span class="mut">${left(h)} left</span>${adminKey?`<button class="del" data-del="${esc(h.id)}">🗑</button>`:''}</div>`).join(''):'<p class="mut">No active issues reported. Roads look clear!</p>';
 }
-$('active').onclick=e=>{const r=e.target.closest('[data-i]');if(r){const h=reports[+r.dataset.i];map.flyTo([h.lat,h.lng],16)}};
+$('active').onclick=e=>{const d=e.target.closest('[data-del]');if(d)return delReport(d.dataset.del);const r=e.target.closest('[data-i]');if(r){const h=reports[+r.dataset.i];map.flyTo([h.lat,h.lng],16)}};
+// ---------- Admin (software handler) ----------
+let adminKey=sessionStorage.getItem('cn.admin')||'';
+const adminOff=()=>{adminKey='';sessionStorage.removeItem('cn.admin');setAdminUI()};
+function setAdminUI(){$('adminBtn').textContent=adminKey?'🔓 Admin · sign out':'🔒 Admin';drawReports()}
+$('adminBtn').onclick=async()=>{
+ if(adminKey){adminOff();return toast('Admin signed out')}
+ if(!remote)return toast('Admin tools need the shared backend (green badge).');
+ const k=prompt('Admin password:');if(!k)return;
+ let ok=false;try{ok=(await fetch(API+'?check=1',{headers:{'x-admin-key':k}})).ok}catch(e){}
+ if(ok){adminKey=k;sessionStorage.setItem('cn.admin',k);setAdminUI();toast('Admin mode on – you can delete issues')}else toast('Wrong password');
+};
+async function delReport(id){
+ if(!confirm('Delete this issue for everyone?'))return;
+ try{const r=await fetch(API+'?id='+encodeURIComponent(id),{method:'DELETE',headers:{'x-admin-key':adminKey}});
+  if(r.status===401){adminOff();return toast('Admin session invalid – sign in again')}
+  if(!r.ok)throw 0;toast('🗑 Issue deleted for everyone');map.closePopup();await loadReports(true);if(routes.length)plan();
+ }catch(e){toast('Delete failed')}
+}
+setAdminUI();
 setInterval(loadReports,60000);
 
 // ---------- Pages (hash routing) ----------
@@ -164,7 +184,7 @@ $('submit').onclick=async()=>{
   const a=lLoad();a.push({...rep,id:Date.now(),t:Date.now(),exp:Date.now()+TTL});lSave(a);toast('Saved on this device only (backend not connected)');
  }
  $('submit').disabled=false;$('note').value='';pickLL=null;$('loc').textContent='👆 Click the map to drop a pin';
- await loadReports();location.hash='#/';
+ await loadReports(true);location.hash='#/';
  if(st.from&&st.to&&routes.length)plan(); // recalculate with the new report
 };
 
