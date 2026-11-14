@@ -44,6 +44,10 @@ input[type=text],textarea{width:100%;padding:10px;border:1px solid var(--line);b
 @keyframes pulse{0%{transform:scale(.5);opacity:1}100%{transform:scale(1.7);opacity:0}}
 .locbtn{width:44px;height:44px;border-radius:50%;border:2px solid #fff;background:#fff;box-shadow:0 2px 8px #0005;font-size:20px;cursor:pointer}
 .locbtn.on{background:#2563eb;color:#fff}.locbtn.free{background:#dbeafe}
+.ac{position:relative}
+.sug{position:absolute;left:0;right:0;top:calc(100% - 8px);background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px #0003;z-index:1000;max-height:270px;overflow:auto}
+.sug div{padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--line)}.sug div:last-child{border:0}
+.sug div:hover,.sug div.on{background:#eff6ff}.sug small{display:block;color:var(--mut)}
 .pin{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;border:2px solid #fff;box-shadow:0 1px 5px #0006;font-size:15px}
 .rl{display:inline-block;color:#fff;font-weight:700;font-size:12px;padding:2px 8px;border-radius:99px;white-space:nowrap;box-shadow:0 1px 4px #0006;transform:translate(-50%,-50%)}
 #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;z-index:9999;max-width:90%}
@@ -56,8 +60,8 @@ input[type=text],textarea{width:100%;padding:10px;border:1px solid var(--line);b
  <section id="v-plan">
   <div class="card">
    <h2>Plan your journey</h2>
-   <input type="text" id="from" placeholder="📍 Start (place name, or click the map)">
-   <input type="text" id="to" placeholder="🏁 Destination">
+   <div class="ac"><input type="text" id="from" autocomplete="off" placeholder="📍 Start – place, area or landmark"><div class="sug" id="sug-from" hidden></div></div>
+   <div class="ac"><input type="text" id="to" autocomplete="off" placeholder="🏁 Destination"><div class="sug" id="sug-to" hidden></div></div>
    <button class="btn alt" id="useMe" type="button" style="margin-bottom:8px">📍 Use my location as start</button>
    <div class="seg" id="modes"><button data-m="d" class="on">🚗 Drive</button><button data-m="f">🚶 Walk</button><button data-m="w">♿ Wheelchair</button></div>
    <div class="two"><label>Depart at<input type="time" id="dep" title="Leave empty for now"></label>
@@ -207,22 +211,84 @@ map.on('click',e=>{
  const ll=[e.latlng.lat,e.latlng.lng];
  if(location.hash==='#/report')return setPick(ll);
  const k=!st.from?'from':!st.to?'to':'from';if(k==='from')st.to=null,$('to').value='';
- const txt=ll[0].toFixed(5)+', '+ll[1].toFixed(5);$(k).value=txt;st[k]={ll,text:txt};pins();
+ setPin(k,ll);
 });
 function pins(){pinL.clearLayers();
- if(st.from)L.marker(st.from.ll).addTo(pinL).bindTooltip('Start',{permanent:true,direction:'top'});
- if(st.to)L.marker(st.to.ll).addTo(pinL).bindTooltip('Destination',{permanent:true,direction:'top'})}
+ [['from','Start'],['to','Destination']].forEach(([k,lb])=>{if(!st[k])return;
+  L.marker(st[k].ll,{draggable:true}).addTo(pinL).bindTooltip(lb+' · drag to adjust',{permanent:true,direction:'top'})
+   .on('dragend',e=>{const p=e.target.getLatLng();setPin(k,[p.lat,p.lng])})})}
+async function setPin(k,ll){ // pin dropped by click/drag: show a readable name like Google Maps
+ const tmp='Dropped pin ('+ll[0].toFixed(4)+', '+ll[1].toFixed(4)+')';$(k).value=tmp;st[k]={ll,text:tmp};pins();
+ try{const r=await fetch('https://photon.komoot.io/reverse?lang=en&lat='+ll[0]+'&lon='+ll[1]);const f=(await r.json()).features[0];
+  if(f&&st[k]&&st[k].text===tmp){const t=photonLabel(f).join(', ');if(t){$(k).value=t;st[k].text=t}}}catch(e){}}
 $('modes').onclick=e=>{const b=e.target.closest('button');if(!b)return;mode=b.dataset.m;[...$('modes').children].forEach(x=>x.classList.toggle('on',x===b));tinfo()};
 
-// ---------- Nominatim ----------
+// ---------- Place search with suggestions (Photon: OSM search-as-you-type, no key) ----------
+function photonLabel(f){const p=f.properties||{},st=p.street?(p.housenumber?p.housenumber+' ':'')+p.street:'';
+ return [...new Set([p.name||st,p.name&&st,p.district||p.suburb||p.locality,p.city||p.county,p.state].filter(Boolean))]}
+async function photon(q,signal){
+ const c=map.getCenter(); // bias results towards the area you are looking at
+ const r=await fetch('https://photon.komoot.io/api/?limit=6&lang=en&lat='+c.lat.toFixed(4)+'&lon='+c.lng.toFixed(4)+'&q='+encodeURIComponent(q),{signal});
+ if(!r.ok)throw new Error('Search error '+r.status);
+ const seen=new Set();
+ return (await r.json()).features.map(f=>{const L=photonLabel(f);return{ll:[f.geometry.coordinates[1],f.geometry.coordinates[0]],name:L[0]||q,sub:L.slice(1).join(', '),text:L.join(', '),src:'ph'}})
+  .filter(x=>!seen.has(x.text)&&seen.add(x.text));
+}
+// Make typing forgiving: expand short forms, drop filler words, tolerate typos, re-rank by match + closeness to the map
+const ABBR={univ:'university',uni:'university',clg:'college',coll:'college',hosp:'hospital',stn:'station',rd:'road',mkt:'market',ctr:'centre',inst:'institute',sch:'school',apt:'apartment',jn:'junction',lyt:'layout',blr:'bengaluru',bglr:'bengaluru',bnglr:'bengaluru'};
+const STOP=new Set(['near','nearby','opp','opposite','beside','behind','the','at']);
+const normQuery=q=>q.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu,' ').split(/\s+/).filter(w=>w&&!STOP.has(w)).map(w=>ABBR[w]||w).join(' ');
+function lev1(a,b){if(a===b)return true;const d=a.length-b.length;if(d>1||d<-1)return false;let i=0,j=0,e=0;
+ while(i<a.length&&j<b.length){if(a[i]===b[j]){i++;j++}else{if(++e>1)return false;if(d>0)i++;else if(d<0)j++;else{i++;j++}}}
+ return e+(a.length-i)+(b.length-j)<=1}
+function rank(list,q){
+ const qt=normQuery(q).split(' ').filter(Boolean),c=map.getCenter(),seen=new Set();
+ return list.map(x=>{const w=normQuery(x.text||'').split(' ');let m=0;
+  qt.forEach(t=>{if(w.some(v=>v===t||(t.length>=3&&v.startsWith(t))||(t.length>=5&&lev1(v,t))))m++});
+  x.s=(qt.length?m/qt.length:0)*10-Math.log10(1+map.distance(c,x.ll)/1000)*1.2+(x.src==='tt'?.3:0);return x})
+ .sort((a,b)=>b.s-a.s)
+ .filter(x=>{const k=normQuery(x.name)+'|'+x.ll[0].toFixed(3)+'|'+x.ll[1].toFixed(3);return !seen.has(k)&&seen.add(k)});
+}
+async function ttSearch(q,signal){const c=map.getCenter();
+ const r=await fetch('/api/search?q='+encodeURIComponent(q)+'&lat='+c.lat.toFixed(4)+'&lon='+c.lng.toFixed(4),{signal});if(!r.ok)throw 0;
+ return (await r.json()).results.map(x=>({ll:[x.lat,x.lon],name:x.name,sub:x.sub,text:x.name+(x.sub?', '+x.sub:''),src:'tt'}))}
+async function searchAll(q,signal){
+ const n=normQuery(q);if(n.length<2)return[];const t=n.split(' '),vs=[n];
+ if(t.length>=3)vs.push(t.slice(0,-1).join(' ')); // also try without the last word (often a too-specific locality)
+ const jobs=vs.map(v=>photon(v,signal));if(live)jobs.push(ttSearch(n,signal));
+ const all=(await Promise.allSettled(jobs)).flatMap(r=>r.status==='fulfilled'?r.value:[]);
+ return rank(all,q).slice(0,7);
+}
+function attach(k){
+ const inp=$(k),box=$('sug-'+k);let items=[],idx=-1,timer,ctl;
+ const hide=()=>{box.hidden=true;idx=-1};
+ const pick=it=>{inp.value=it.text;st[k]={ll:it.ll,text:it.text};pins();hide();map.flyTo(it.ll,15)};
+ const draw=()=>{box.innerHTML='';items.forEach((it,i)=>{const d=document.createElement('div'),b=document.createElement('b'),s=document.createElement('small');
+  d.className=i===idx?'on':'';b.textContent='📍 '+it.name;s.textContent=it.sub;d.append(b,s);d.onmousedown=e=>{e.preventDefault();pick(it)};box.append(d)});box.hidden=!items.length};
+ inp.addEventListener('input',()=>{clearTimeout(timer);const q=inp.value.trim();if(q.length<3||q==='My current location')return hide();
+  timer=setTimeout(async()=>{if(ctl)ctl.abort();ctl=new AbortController();
+   const my=ctl;try{items=await searchAll(q,my.signal);if(my.signal.aborted)return;idx=-1;draw()}catch(e){if(e.name!=='AbortError')hide()}},300)});
+ inp.addEventListener('keydown',e=>{
+  if(!box.hidden&&e.key==='ArrowDown'){idx=(idx+1)%items.length;draw();e.preventDefault()}
+  else if(!box.hidden&&e.key==='ArrowUp'){idx=(idx-1+items.length)%items.length;draw();e.preventDefault()}
+  else if(e.key==='Enter'){e.preventDefault();if(!box.hidden&&idx>=0)pick(items[idx]);else{hide();if($('from').value.trim()&&$('to').value.trim()&&!$('go').disabled)plan()}}
+  else if(e.key==='Escape')hide()});
+ inp.addEventListener('blur',()=>setTimeout(hide,150));
+}
+attach('from');attach('to');
+
+// ---------- Nominatim (fallback geocoder when you type a place but don't pick a suggestion) ----------
 async function resolve(k){
  const v=$(k).value.trim();if(!v)throw new Error('Enter both a start and a destination.');
  if(st[k]&&st[k].text===v)return;
  const m=v.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
  if(m)st[k]={ll:[+m[1],+m[2]],text:v};
- else{const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(v));
-  if(!r.ok)throw new Error('Geocoder error '+r.status);const j=await r.json();
-  if(!j.length)throw new Error('Place not found: '+v);st[k]={ll:[+j[0].lat,+j[0].lon],text:v}}
+ else{
+  let hit=null;try{hit=(await searchAll(v))[0]}catch(e){}
+  if(!hit){try{const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(v));
+   const j=r.ok?await r.json():[];if(j.length)hit={ll:[+j[0].lat,+j[0].lon]}}catch(e){}}
+  if(!hit)throw new Error('Place not found: "'+v+'". Pick a suggestion, try a shorter name (e.g. "Christ University Bengaluru"), or click the map.');
+  st[k]={ll:hit.ll,text:v}}
  pins();
 }
 // ---------- OSRM ----------
