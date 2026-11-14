@@ -238,12 +238,20 @@ function detours(r){ // via-points on both sides of the first two blocking hazar
  r.hits.slice(0,2).forEach(h=>{
   const n=nearest(r.coords,h.lat,h.lng),a=r.coords[n.i],b=r.coords[n.i+1]||a,k=Math.cos(h.lat*Math.PI/180);
   let dx=(b[1]-a[1])*k,dy=b[0]-a[0];const L2=Math.hypot(dx,dy)||1;dx/=L2;dy/=L2;
-  [1,-1].forEach(s=>[2.2,4].forEach(m=>{const o=(h.r*m+60)/111320;out.push([h.lat+s*dx*o,h.lng-s*dy*o/k])}));});
+  [1,-1].forEach(s=>[1.5,2.5].forEach(m=>{const o=(h.r*m+60)/111320;out.push([h.lat+s*dx*o,h.lng-s*dy*o/k])}));});
  return out;
 }
 const minBy=(a,f)=>a.reduce((x,y)=>f(y)<f(x)?y:x);
 const dedupe=a=>{const o=[];a.forEach(r=>{if(!o.some(x=>Math.abs(x.dist-r.dist)<x.dist*.015&&Math.abs(x.dur-r.dur)<x.dur*.03))o.push(r)});return o};
 
+// Rejects detours that dive into a dead-end street and U-turn (route overlaps itself in opposite directions)
+function backtracks(co){
+ const k=Math.cos(co[0][0]*Math.PI/180),Mt=111320;let px=co[0][1]*k*Mt,py=co[0][0]*Mt,d=0,last=0;const s=[[px,py,0]];
+ for(let i=1;i<co.length;i++){const x=co[i][1]*k*Mt,y=co[i][0]*Mt;d+=Math.hypot(x-px,y-py);px=x;py=y;if(d-last>=10){s.push([x,y,d]);last=d}}
+ const near=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1])<12;
+ for(let i=0;i<s.length;i++)for(let j=i+3;j<s.length;j++)if(s[j][2]-s[i][2]>80&&near(s[i],s[j])&&near(s[i+1],s[j-1]))return true;
+ return false;
+}
 // ---------- Planner ----------
 $('go').onclick=plan;
 async function plan(){
@@ -251,11 +259,11 @@ async function plan(){
  try{
   msg('Finding places…');await resolve('from');await resolve('to');
   const A=st.from.ll,B=st.to.ll;msg('Calculating routes…');
-  let pool=(await osrm([A,B])).map(score);
+  let pool=(await osrm([A,B])).map(score);const base=pool[0].dist;
   for(let i=0;i<2;i++){
    const b=minBy(pool,r=>r.score);if(!b.hits.length)break;
    msg('Looking for detours around '+b.hits.length+' reported issue(s)…');
-   for(const v of detours(b)){try{(await osrm([A,v,B])).slice(0,1).forEach(r=>pool.push(score(r)))}catch(e){}}
+   for(const v of detours(b)){try{(await osrm([A,v,B])).slice(0,1).forEach(r=>{if(r.dist<=base*1.8+300&&!backtracks(r.coords))pool.push(score(r))})}catch(e){}}
   }
   pool=dedupe(pool);
   const f=minBy(pool,r=>r.dur),s=minBy(pool,r=>r.pen*1e6+r.dur),l=minBy(pool,r=>-r.dist),keep=new Set([f,s,l]);
