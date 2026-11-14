@@ -35,6 +35,7 @@ input[type=text],textarea{width:100%;padding:10px;border:1px solid var(--line);b
 .loc{padding:10px;border:1px dashed var(--line);border-radius:8px;margin-bottom:8px;background:#f8fafc}
 .arow{display:flex;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px}
 .del{border:0;background:#fee2e2;color:#991b1b;border-radius:6px;padding:3px 8px;cursor:pointer}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}.two label{font-size:12px;color:var(--mut)}.two input,.two select{width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;background:#fff;font:inherit;color:var(--ink)}
 .pin{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;border:2px solid #fff;box-shadow:0 1px 5px #0006;font-size:15px}
 .rl{display:inline-block;color:#fff;font-weight:700;font-size:12px;padding:2px 8px;border-radius:99px;white-space:nowrap;box-shadow:0 1px 4px #0006;transform:translate(-50%,-50%)}
 #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;z-index:9999;max-width:90%}
@@ -50,6 +51,9 @@ input[type=text],textarea{width:100%;padding:10px;border:1px solid var(--line);b
    <input type="text" id="from" placeholder="📍 Start (place name, or click the map)">
    <input type="text" id="to" placeholder="🏁 Destination">
    <div class="seg" id="modes"><button data-m="d" class="on">🚗 Drive</button><button data-m="f">🚶 Walk</button><button data-m="w">♿ Wheelchair</button></div>
+   <div class="two"><label>Depart at<input type="time" id="dep" title="Leave empty for now"></label>
+    <label>Traffic<select id="traf"><option value="auto">Auto (typical)</option><option value="1">None (free-flow)</option><option value="1.3">Light</option><option value="1.6">Moderate</option><option value="2">Heavy</option></select></label></div>
+   <div class="mut" id="tinfo" style="margin-bottom:8px"></div>
    <button class="btn" id="go">Find routes</button>
   </div>
   <p id="msg"></p>
@@ -99,7 +103,8 @@ const OSRM={d:'https://router.project-osrm.org/route/v1/driving/',f:'https://rou
 const COL=['#2563eb','#059669','#9333ea','#ea580c','#db2777'];
 const fT=s=>{s=Math.round(s/60);return s<60?s+' min':Math.floor(s/60)+' h '+s%60+' min'};
 const fD=m=>(m/1000).toFixed(1)+' km';
-const clock=s=>new Date(Date.now()+s*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+let depT=Date.now(),live=false,liveOn=false;
+const clock=s=>new Date(depT+s*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
 const left=h=>{const m=Math.max(1,Math.round((h.exp-Date.now())/60000));return m>=60?Math.round(m/60)+' h':m+' min'};
 const toast=t=>{const e=$('toast');e.textContent=t;e.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>e.hidden=true,4000)};
 const msg=t=>$('msg').textContent=t||'';
@@ -198,7 +203,7 @@ map.on('click',e=>{
 function pins(){pinL.clearLayers();
  if(st.from)L.marker(st.from.ll).addTo(pinL).bindTooltip('Start',{permanent:true,direction:'top'});
  if(st.to)L.marker(st.to.ll).addTo(pinL).bindTooltip('Destination',{permanent:true,direction:'top'})}
-$('modes').onclick=e=>{const b=e.target.closest('button');if(!b)return;mode=b.dataset.m;[...$('modes').children].forEach(x=>x.classList.toggle('on',x===b))};
+$('modes').onclick=e=>{const b=e.target.closest('button');if(!b)return;mode=b.dataset.m;[...$('modes').children].forEach(x=>x.classList.toggle('on',x===b));tinfo()};
 
 // ---------- Nominatim ----------
 async function resolve(k){
@@ -212,11 +217,26 @@ async function resolve(k){
  pins();
 }
 // ---------- OSRM ----------
+// ---------- Traffic ----------
+// Typical congestion multipliers by hour (index 0-23) for a large Indian city; weekday vs weekend. Edit to calibrate.
+const WD=[1,1,1,1,1,1,1.15,1.4,1.7,1.9,1.7,1.4,1.3,1.3,1.3,1.4,1.6,1.9,2,1.9,1.6,1.3,1.1,1];
+const WE=[1,1,1,1,1,1,1,1.1,1.2,1.3,1.4,1.4,1.4,1.4,1.4,1.4,1.4,1.5,1.5,1.4,1.3,1.2,1.1,1];
+function trafficFactor(t){const v=$('traf').value;if(v!=='auto')return +v;const d=new Date(t);return (d.getDay()%6?WD:WE)[d.getHours()]}
+function depTime(){const v=$('dep').value;if(!v)return Date.now();const [h,m]=v.split(':').map(Number),d=new Date();d.setHours(h,m,0,0);if(d.getTime()<Date.now()-300000)d.setDate(d.getDate()+1);return d.getTime()}
+function tinfo(){const t=depTime(),F=trafficFactor(t);
+ $('tinfo').textContent=mode!=='d'?'':live?'🟢 Live traffic (TomTom) is on for driving.':'🕒 Estimated traffic at '+new Date(t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})+': '+(F===1?'free-flow':'×'+F.toFixed(1))+' (typical pattern, not live).'}
+['dep','traf'].forEach(i=>$(i).onchange=tinfo);
+fetch('/api/traffic?status=1').then(r=>r.json()).then(j=>{live=!!j.enabled;tinfo()}).catch(()=>{});
 async function osrm(pts){
+ if(mode==='d'&&liveOn){try{
+  const r=await fetch('/api/traffic?pts='+pts.map(p=>p[0]+','+p[1]).join(':'));if(!r.ok)throw 0;
+  const j=await r.json();if(!j.routes||!j.routes.length)throw 0;return j.routes;
+ }catch(e){liveOn=false;toast('Live traffic unavailable – using typical traffic estimate')}}
+ const F=mode==='d'?trafficFactor(depT):1;
  const u=OSRM[mode==='d'?'d':'f']+pts.map(p=>p[1]+','+p[0]).join(';')+'?overview=full&geometries=geojson&alternatives=true';
  const r=await fetch(u);if(!r.ok)throw new Error('Routing service error '+r.status);
  const j=await r.json();if(j.code!=='Ok')throw new Error('No route found');
- return j.routes.map(x=>({coords:x.geometry.coordinates.map(c=>[c[1],c[0]]),dur:x.duration,dist:x.distance}));
+ return j.routes.map(x=>({coords:x.geometry.coordinates.map(c=>[c[1],c[0]]),dur:x.duration*F,free:x.duration,dist:x.distance}));
 }
 // ---------- Hazard assessment ----------
 function nearest(co,lat,lng){
@@ -255,7 +275,7 @@ function backtracks(co){
 // ---------- Planner ----------
 $('go').onclick=plan;
 async function plan(){
- $('go').disabled=true;
+ $('go').disabled=true;depT=depTime();liveOn=live&&mode==='d';tinfo();
  try{
   msg('Finding places…');await resolve('from');await resolve('to');
   const A=st.from.ll,B=st.to.ll;msg('Calculating routes…');
@@ -289,7 +309,7 @@ function render(){
   return `<div class="rt ${i===sel?'on':''}" data-i="${i}"><div class="bar" style="background:${r.col}"></div><div style="flex:1">
    <div><b>Route ${r.name}</b>${r===s?bd('Safest','#059669'):''}${r===f?bd('Fastest','#2563eb'):''}${r===l?bd('Longest','#9333ea'):''}${r.blocked?bd('Blocked','#dc2626'):''}</div>
    <div class="big">${r.blocked?'Not passable':'Arrive '+clock(r.eta)} <span>· ${fT(r.blocked?r.dur:r.eta)}</span></div>
-   <div class="mut">📏 ${fD(r.dist)} · ${r.hits.length?'⚠ '+r.hits.length+' issue'+(r.hits.length>1?'s':''):'✓ No reported issues'}${r.delay>=60?' · incl. ~'+Math.round(r.delay/60)+' min delay':''}${r!==f?' · '+(d>=0?'+':'')+d+' min vs fastest':''}</div>
+   <div class="mut">📏 ${fD(r.dist)} · ${r.hits.length?'⚠ '+r.hits.length+' issue'+(r.hits.length>1?'s':''):'✓ No reported issues'}${r.dur-r.free>=120?' · traffic +'+Math.round((r.dur-r.free)/60)+' min':''}${r.delay>=60?' · incl. ~'+Math.round(r.delay/60)+' min delay':''}${r!==f?' · '+(d>=0?'+':'')+d+' min vs fastest':''}</div>
    ${i===sel&&r.hits.length?'<ul>'+r.hits.map(h=>`<li>${T[h.type].e} ${esc(T[h.type].l)}${h.note?' – '+esc(h.note):''}</li>`).join('')+'</ul>':''}
   </div></div>`}).join('')+
  (best.s.blocked?'<div class="info">⚠ Every route found crosses a blocked spot. Try different start/end points.</div>':'')+
@@ -301,5 +321,5 @@ function render(){
   L.marker(m,{icon:L.divIcon({className:'',iconSize:[0,0],html:`<span class="rl" style="background:${r.col}">${r.name} · ${Math.round(r.eta/60)} min</span>`})}).addTo(routeL).on('click',()=>select(i));});
  top&&top.bringToFront();
 }
-loadReports();page();
+loadReports();page();tinfo();
 </script></body></html>
