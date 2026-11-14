@@ -36,6 +36,14 @@ input[type=text],textarea{width:100%;padding:10px;border:1px solid var(--line);b
 .arow{display:flex;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px}
 .del{border:0;background:#fee2e2;color:#991b1b;border-radius:6px;padding:3px 8px;cursor:pointer}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}.two label{font-size:12px;color:var(--mut)}.two input,.two select{width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;background:#fff;font:inherit;color:var(--ink)}
+.me{width:22px;height:22px;position:relative}
+.me i{position:absolute;inset:3px;border-radius:50%;background:#2563eb;border:3px solid #fff;box-shadow:0 0 6px #0008}
+.me b{position:absolute;inset:-4px;border-radius:50%;background:#2563eb66;animation:pulse 2s infinite}
+.me u{position:absolute;left:50%;top:-11px;margin-left:-6px;border:6px solid transparent;border-bottom:11px solid #2563eb;display:none}
+.me.h u{display:block}
+@keyframes pulse{0%{transform:scale(.5);opacity:1}100%{transform:scale(1.7);opacity:0}}
+.locbtn{width:44px;height:44px;border-radius:50%;border:2px solid #fff;background:#fff;box-shadow:0 2px 8px #0005;font-size:20px;cursor:pointer}
+.locbtn.on{background:#2563eb;color:#fff}.locbtn.free{background:#dbeafe}
 .pin{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;border:2px solid #fff;box-shadow:0 1px 5px #0006;font-size:15px}
 .rl{display:inline-block;color:#fff;font-weight:700;font-size:12px;padding:2px 8px;border-radius:99px;white-space:nowrap;box-shadow:0 1px 4px #0006;transform:translate(-50%,-50%)}
 #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;z-index:9999;max-width:90%}
@@ -50,6 +58,7 @@ input[type=text],textarea{width:100%;padding:10px;border:1px solid var(--line);b
    <h2>Plan your journey</h2>
    <input type="text" id="from" placeholder="📍 Start (place name, or click the map)">
    <input type="text" id="to" placeholder="🏁 Destination">
+   <button class="btn alt" id="useMe" type="button" style="margin-bottom:8px">📍 Use my location as start</button>
    <div class="seg" id="modes"><button data-m="d" class="on">🚗 Drive</button><button data-m="f">🚶 Walk</button><button data-m="w">♿ Wheelchair</button></div>
    <div class="two"><label>Depart at<input type="time" id="dep" title="Leave empty for now"></label>
     <label>Traffic<select id="traf"><option value="auto">Auto (typical)</option><option value="1">None (free-flow)</option><option value="1.3">Light</option><option value="1.6">Moderate</option><option value="2">Heavy</option></select></label></div>
@@ -217,6 +226,41 @@ async function resolve(k){
  pins();
 }
 // ---------- OSRM ----------
+// ---------- Live location (blue dot that moves with you) ----------
+let watchId=null,meM=null,meC=null,follow=true,myLL=null,wantStart=false;
+const LocCtl=L.Control.extend({onAdd(){const b=L.DomUtil.create('button','locbtn');b.id='locBtn';b.title='Show / follow my location';b.textContent='📍';L.DomEvent.disableClickPropagation(b);b.onclick=locClick;return b}});
+new LocCtl({position:'bottomright'}).addTo(map);
+function locClick(){
+ if(watchId===null)return startTrack();
+ if(!follow&&myLL){follow=true;$('locBtn').classList.remove('free');return map.setView(myLL,Math.max(map.getZoom(),16))}
+ stopTrack();toast('Location tracking off');
+}
+function startTrack(){
+ if(!navigator.geolocation)return toast('Location is not supported on this device');
+ follow=true;$('locBtn').classList.add('on');
+ watchId=navigator.geolocation.watchPosition(onPos,e=>{toast(e.code===1?'Location blocked – allow it in your browser/site settings':'Could not get your location');stopTrack()},{enableHighAccuracy:true,maximumAge:2000,timeout:20000});
+}
+function stopTrack(){
+ if(watchId!==null)navigator.geolocation.clearWatch(watchId);watchId=null;myLL=null;wantStart=false;
+ if(meM){map.removeLayer(meM);map.removeLayer(meC);meM=meC=null}
+ $('locBtn').classList.remove('on','free');
+}
+function onPos(p){
+ const ll=[p.coords.latitude,p.coords.longitude],first=!meM;myLL=ll;
+ if(first){
+  meC=L.circle(ll,{radius:p.coords.accuracy,weight:1,color:'#2563eb',fillOpacity:.1,interactive:false}).addTo(map);
+  meM=L.marker(ll,{icon:L.divIcon({className:'',iconSize:[22,22],iconAnchor:[11,11],html:'<div class="me"><b></b><i></i><u></u></div>'}),zIndexOffset:1000,interactive:false}).addTo(map);
+  if(p.coords.accuracy>1000)toast('Low accuracy – a phone with GPS works best');
+ }else{meM.setLatLng(ll);meC.setLatLng(ll);meC.setRadius(p.coords.accuracy)}
+ const me=meM.getElement()&&meM.getElement().firstChild,h=p.coords.heading;
+ if(me&&h!=null&&!isNaN(h)){me.style.transform='rotate('+h+'deg)';me.classList.add('h')}
+ if(first)map.setView(ll,Math.max(map.getZoom(),16));else if(follow)map.panTo(ll);
+ if(wantStart){wantStart=false;setStart(ll)}
+}
+map.on('dragstart',()=>{if(watchId!==null){follow=false;$('locBtn').classList.add('free')}});
+function setStart(ll){const t='My current location';$('from').value=t;st.from={ll,text:t};pins()}
+$('useMe').onclick=()=>{if(myLL){setStart(myLL);map.setView(myLL,16)}else{wantStart=true;if(watchId===null)startTrack()}};
+
 // ---------- Traffic ----------
 // Typical congestion multipliers by hour (index 0-23) for a large Indian city; weekday vs weekend. Edit to calibrate.
 const WD=[1,1,1,1,1,1,1.15,1.4,1.7,1.9,1.7,1.4,1.3,1.3,1.3,1.4,1.6,1.9,2,1.9,1.6,1.3,1.1,1];
@@ -277,7 +321,7 @@ $('go').onclick=plan;
 async function plan(){
  $('go').disabled=true;depT=depTime();liveOn=live&&mode==='d';tinfo();
  try{
-  msg('Finding places…');await resolve('from');await resolve('to');
+  msg('Finding places…');if(st.from&&st.from.text==='My current location'&&myLL){st.from.ll=myLL;pins()}await resolve('from');await resolve('to');
   const A=st.from.ll,B=st.to.ll;msg('Calculating routes…');
   let pool=(await osrm([A,B])).map(score);const base=pool[0].dist;
   for(let i=0;i<2;i++){
