@@ -11,7 +11,7 @@
 
 | Feature | What it does |
 |---|---|
-| **Route alternatives + dashboard** | Up to 5 colour-coded routes with time labels. A side dashboard names the **Safest**, **Fastest** (lowest expected time) and **Longest** (distance) route with arrival time, distance and issues on each. |
+| **Route alternatives + dashboard** | Up to 5 colour-coded routes with time labels. A side dashboard names the **Safest**, **Fastest** (lowest expected time) and **Longest** (highest expected time) route with arrival time, distance and issues on each. |
 | **Smart place search** | Suggestions as you type, tolerant of typos and short forms ("univ", "clg"), biased to the area on the map. Pins are draggable and show a readable address. |
 | **Community issue reporting** | Separate report page: 8 types (flood, closure, accident, damaged road, missing ramp, broken footpath, stairs, hard avoid zone), severity, radius, note. Anyone can report. |
 | **Shared + auto-expiring** | Reports are shared with all users, hidden after **48 hours**, then archived in this repo. |
@@ -19,6 +19,7 @@
 | **Walk & wheelchair modes** | Wheelchair mode treats missing ramps, stairs and broken footpaths as hard blocks. |
 | **Traffic-aware ETA** | Typical congestion by time of day/weekday, manual levels, departure time. Optional **live traffic** (TomTom). |
 | **Live location** | Blue dot that moves with you, follow mode, "use my location as start". |
+| **Navigation mode** | "Start on Route X" opens a full-screen, heading-up view that follows you, with next-turn hints, remaining distance, time and arrival. If you leave the route, or a new issue is reported ahead of you, it re-plans automatically using the latest reported issues. |
 | **Admin delete** | Only the software handler (password) can delete reports. |
 
 ## Tech stack
@@ -50,7 +51,8 @@ User ─► Web app (Leaflet) ─► Netlify Functions ─► GitHub repo (repor
 5. **Show** – dashboard lists Safest / Fastest / Longest; user chooses.
 6. **Report** – new issue → `POST /api/reports` → function commits it to `data/active.json`. Everyone sees it on next refresh.
 7. **Expire & archive** – after 48 h it stops appearing; the hourly Action moves it to `data/archive/YYYY-MM.json`.
-8. **Moderate** – admin signs in; server checks the password and deletes the report with a commit.
+8. **Navigate** – "Start on Route X" follows the phone's GPS, rotates the map to the direction of travel and shows the next turn. If the position stays more than about 45 m from the route for a few seconds, or a new issue is reported on the part of the route still ahead, the app reloads the latest reports and re-plans from the current location to the same destination, never choosing a route through a closure.
+9. **Moderate** – admin signs in; server checks the password and deletes the report with a commit.
 
 ## Project structure
 
@@ -156,7 +158,7 @@ git push
 - TomTom's free tier is limited (about 2,500 requests/day, shared by search and routing).
 
 ## Future scope
-Automatic re-routing while travelling, voice directions, report voting and photos, using archived data to flag repeat flood spots, predictive AI and direct municipal sensor integration.
+Voice directions, street names in turn hints, report voting and photos, using archived data to flag repeat flood spots, predictive AI and direct municipal sensor integration.
 
 ## Credits
 Map data © OpenStreetMap contributors · Leaflet · OSRM · Photon / Nominatim · TomTom · Netlify · GitHub

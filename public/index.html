@@ -12,7 +12,7 @@ header{height:56px;display:flex;align-items:center;justify-content:space-between
 .chip{font-size:12px;padding:4px 10px;border-radius:99px;background:#1e293b}
 main{flex:1;display:flex;min-height:0}
 #panel{width:420px;overflow:auto;padding:14px;flex:none}
-#map{flex:1;min-height:0}
+#mapwrap{flex:1;min-height:0;position:relative;overflow:hidden}#map{position:absolute;inset:0}
 .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px;box-shadow:0 1px 2px #0001}
 h2{font-size:16px;margin:0 0 8px}h3{font-size:12px;margin:12px 0 6px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em}
 input,select,textarea,button{font:inherit}
@@ -48,10 +48,22 @@ input[type=text],textarea{width:100%;padding:10px;border:1px solid var(--line);b
 .sug{position:absolute;left:0;right:0;top:calc(100% - 8px);background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px #0003;z-index:1000;max-height:270px;overflow:auto}
 .sug div{padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--line)}.sug div:last-child{border:0}
 .sug div:hover,.sug div.on{background:#eff6ff}.sug small{display:block;color:var(--mut)}
+#hud{position:absolute;inset:0;pointer-events:none;z-index:1100}#hud>*{pointer-events:auto}
+#hTurn{position:absolute;top:12px;left:12px;right:12px;background:#0f172a;color:#fff;border-radius:14px;padding:12px 16px;display:flex;gap:14px;align-items:center;box-shadow:0 4px 16px #0006}
+#hArrow{font-size:40px;line-height:1;min-width:44px;text-align:center}#hTurn b{font-size:24px;display:block}#hTurn small{color:#cbd5e1;font-size:14px}
+#hBar{position:absolute;left:12px;right:12px;bottom:14px;background:#fff;border-radius:14px;padding:10px 14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;box-shadow:0 4px 16px #0005}
+#hBar>div{flex:1 1 100%}#hBar b{font-size:20px;display:block}#hBar small{color:var(--mut);font-size:13px}
+#hBar button{height:40px;min-width:40px;border-radius:20px;border:1px solid var(--line);background:#fff;font-size:18px;cursor:pointer;padding:0 12px;font-weight:600}
+#hBar #hStop{background:#dc2626;color:#fff;border:0;font-size:15px;margin-left:auto}
+body.nav #panel,body.nav header{display:none}
+body.nav #mapwrap{flex:1!important;height:auto!important}
+body.nav .rl,body.nav .leaflet-tooltip,body.nav .leaflet-control-container{display:none}
+body.nav .pin,body.nav .me{transform:rotate(var(--ctr,0deg))}
+.pin{color:#fff;font-weight:700}
 .pin{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;border:2px solid #fff;box-shadow:0 1px 5px #0006;font-size:15px}
 .rl{display:inline-block;color:#fff;font-weight:700;font-size:12px;padding:2px 8px;border-radius:99px;white-space:nowrap;box-shadow:0 1px 4px #0006;transform:translate(-50%,-50%)}
 #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;z-index:9999;max-width:90%}
-@media(max-width:800px){main{flex-direction:column-reverse}#panel{width:100%;height:58%}#map{flex:none;height:42%}}
+@media(max-width:800px){main{flex-direction:column-reverse}#panel{width:100%;height:58%}#mapwrap{flex:none;height:42%}}
 </style></head><body>
 <header><div class="brand">🧭 Chaos<b>Nav</b></div><div><button id="adminBtn" class="chip" style="border:0;color:#fff;cursor:pointer;margin-right:8px">🔒 Admin</button><span id="sync" class="chip">connecting…</span></div></header>
 <main>
@@ -93,7 +105,14 @@ input[type=text],textarea{width:100%;padding:10px;border:1px solid var(--line);b
   </div>
  </section>
 </aside>
-<div id="map"></div>
+<div id="mapwrap"><div id="map"></div>
+ <div id="hud" hidden>
+  <div id="hTurn"><span id="hArrow">&#8593;</span><div><b id="hDist"></b><small id="hText"></small><small id="hWarn" style="display:block;color:#fbbf24"></small></div></div>
+  <div id="hBar"><div><b id="hEta"></b><small id="hRem"></small></div>
+   <button id="hZin" type="button">+</button><button id="hZout" type="button">&minus;</button>
+   <button id="hStop" type="button">Stop</button></div>
+ </div>
+</div>
 </main>
 <div id="toast" hidden></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -121,7 +140,8 @@ const clock=s=>new Date(depT+s*1000).toLocaleTimeString([],{hour:'2-digit',minut
 const left=h=>{const m=Math.max(1,Math.round((h.exp-Date.now())/60000));return m>=60?Math.round(m/60)+' h':m+' min'};
 const toast=t=>{const e=$('toast');e.textContent=t;e.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>e.hidden=true,4000)};
 const msg=t=>$('msg').textContent=t||'';
-let mode='d',reports=[],remote=false,routes=[],best={},sel=0,st={from:null,to:null};
+let planRep=[],mode='d',reports=[],remote=false,routes=[],best={},sel=0,st={from:null,to:null};
+let navOn=false,navRoute=null,navIdx=0,navB=0,navZoom=18,prevLL=null,offCnt=0,lastRe=0,rerouting=false,wl=null;
 
 // ---------- Map ----------
 const map=L.map('map').setView([12.9716,77.5946],12);
@@ -137,6 +157,7 @@ async function loadReports(fresh){
  reports=reports.filter(h=>h.exp>Date.now()&&T[h.type]);
  $('sync').textContent=remote?'🟢 Shared reports · GitHub':'🟠 Local demo mode (backend not connected)';
  drawReports();
+ if(navOn)navReportsChanged();
 }
 function drawReports(){
  repL.clearLayers();
@@ -149,6 +170,110 @@ function drawReports(){
  $('active').innerHTML=reports.length?reports.map((h,i)=>`<div class="arow" data-i="${i}"><span style="font-size:18px">${T[h.type].e}</span><span style="flex:1"><b>${esc(T[h.type].l)}</b><br><span class="mut">${esc(h.note||SEV[h.sev]+' severity')}</span></span><span class="mut">${left(h)} left</span>${adminKey?`<button class="del" data-del="${esc(h.id)}">🗑</button>`:''}</div>`).join(''):'<p class="mut">No active issues reported. Roads look clear!</p>';
 }
 $('active').onclick=e=>{const d=e.target.closest('[data-del]');if(d)return delReport(d.dataset.del);const r=e.target.closest('[data-i]');if(r){const h=reports[+r.dataset.i];map.flyTo([h.lat,h.lng],16)}};
+// ---------- Navigation mode: follow-me, heading-up view, turn hints, issue-aware re-routing ----------
+const bear=(a,b)=>{const t=Math.PI/180,dl=(b[1]-a[1])*t,y=Math.sin(dl)*Math.cos(b[0]*t),x=Math.cos(a[0]*t)*Math.sin(b[0]*t)-Math.sin(a[0]*t)*Math.cos(b[0]*t)*Math.cos(dl);return(Math.atan2(y,x)/t+360)%360};
+const dAng=(a,b)=>((b-a)%360+540)%360-180;
+const fDist=m=>m<1000?Math.max(10,Math.round(m/10)*10)+' m':(m/1000).toFixed(1)+' km';
+function prepRoute(R){ // clean geometry + remember which reported issues lie on this route and where
+ const co=R.coords.filter((c,i,a)=>i===0||map.distance(a[i-1],c)>0.5),cum=[0],haz=[];
+ for(let i=1;i<co.length;i++)cum.push(cum[i-1]+map.distance(co[i-1],co[i]));
+ reports.forEach(h=>{if(!T[h.type].p[mode])return;const n=nearest(co,h.lat,h.lng);if(n.d<=h.r+15)haz.push({h,at:cum[n.i]})});
+ return{coords:co,cum,total:cum[cum.length-1]||1,eta:R.eta,haz,ids:new Set(haz.map(x=>x.h.id))}}
+function nextTurn(R,i){ // first turn ahead: heading change of 35 degrees or more within ~40 m
+ const co=R.coords,w=[],s0=Math.max(i,1);
+ for(let k=s0;k<co.length-1;k++){
+  if(R.cum[k]-R.cum[s0]>2500)break;
+  w.push([R.cum[k],dAng(bear(co[k-1],co[k]),bear(co[k],co[k+1]))]);
+  while(w[0][0]<R.cum[k]-40)w.shift();
+  const sum=w.reduce((a,x)=>a+x[1],0);if(Math.abs(sum)>=35)return{at:R.cum[k],ang:sum}}
+ return null}
+function setBearing(b){ // rotate the map so your direction of travel points up
+ const w=$('mapwrap'),W=w.clientWidth,H=w.clientHeight,d=Math.ceil(Math.hypot(W,H))+16,m=$('map');
+ if(m.dataset.big!==String(d)){Object.assign(m.style,{inset:'auto',width:d+'px',height:d+'px',left:(W-d)/2+'px',top:(H-d)/2+'px'});m.dataset.big=String(d);map.invalidateSize({animate:false})}
+ m.style.transform='rotate('+(-b)+'deg)';document.body.style.setProperty('--ctr',b+'deg')}
+async function startNav(){
+ const R0=routes[sel];if(!R0)return;
+ if(R0.blocked&&!confirm('This route is blocked by a reported issue. Start anyway?'))return;
+ if(!navigator.geolocation)return toast('Location is not supported on this device');
+ navOn=true;navRoute=prepRoute(R0);navIdx=0;prevLL=null;offCnt=0;lastRe=0;rerouting=false;navZoom=18;
+ document.body.classList.add('nav');$('hud').hidden=false;
+ ['dragging','touchZoom','scrollWheelZoom','doubleClickZoom','boxZoom','keyboard'].forEach(h=>map[h].disable());
+ navB=bear(R0.coords[0],R0.coords[Math.min(5,R0.coords.length-1)]);
+ setBearing(navB);map.setView(R0.coords[0],navZoom,{animate:false});pins();render();
+ $('hArrow').innerHTML='&#8593;';$('hDist').textContent='Waiting for GPS';$('hText').textContent='Start moving - the map will follow you';
+ $('hWarn').textContent='';$('hEta').textContent='';$('hRem').textContent='';
+ if(watchId===null)startTrack();
+ try{wl=await navigator.wakeLock.request('screen')}catch(e){}
+}
+function stopNav(){
+ navOn=false;navRoute=null;rerouting=false;
+ try{wl&&wl.release()}catch(e){}wl=null;
+ document.body.classList.remove('nav');$('hud').hidden=true;
+ ['dragging','touchZoom','scrollWheelZoom','doubleClickZoom','boxZoom','keyboard'].forEach(h=>map[h].enable());
+ const m=$('map');m.style.cssText='';m.dataset.big='';document.body.style.removeProperty('--ctr');map.invalidateSize();
+ pins();if(routes.length){render();map.fitBounds(L.polyline(routes[sel].coords).getBounds(),{padding:[50,50]})}
+}
+function navTick(p){
+ const R=navRoute;if(!R)return;
+ const ll=[p.coords.latitude,p.coords.longitude],acc=p.coords.accuracy||20,thr=Math.max(45,acc*1.5),co=R.coords;
+ if(acc>250){$('hText').textContent='Weak GPS signal - move to an open area';return} // never reroute on a bad fix
+ // 1) where am I along the route?
+ const lo=Math.max(0,navIdx-3);let n=nearest(co.slice(lo,lo+400),ll[0],ll[1]);n.i+=lo;
+ if(n.d>thr){const g=nearest(co,ll[0],ll[1]);if(g.d<n.d)n=g}
+ const on=n.d<=thr;if(on&&n.i>navIdx)navIdx=Math.min(n.i,Math.max(0,co.length-2));
+ // 2) which way am I facing? (GPS heading, else movement, else route direction)
+ const sp=p.coords.speed,hd=p.coords.heading;let tgt;
+ if(hd!=null&&!isNaN(hd)&&sp>1)tgt=hd;
+ else if(prevLL&&map.distance(prevLL,ll)>6)tgt=bear(prevLL,ll);
+ else tgt=bear(co[navIdx],co[Math.min(navIdx+3,co.length-1)]);
+ if(!prevLL||map.distance(prevLL,ll)>6)prevLL=ll;
+ navB+=dAng(navB,tgt)*0.4;setBearing(navB);
+ // 3) keep me in the lower part of the screen, looking ahead
+ const z=navZoom,k=$('mapwrap').clientHeight*0.22,a=navB*Math.PI/180;
+ map.setView(map.unproject(map.project(ll,z).add([Math.sin(a)*k,-Math.cos(a)*k]),z),z,{animate:true,duration:.8,easeLinearity:1});
+ // 4) remaining distance, time and arrival
+ const nx=Math.min(navIdx+1,co.length-1),rem=Math.max(0,R.total-R.cum[nx]+map.distance(ll,co[nx])),remT=R.eta*rem/R.total,trav=R.total-rem;
+ $('hEta').textContent=new Date(Date.now()+remT*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})+' arrival';
+ $('hRem').textContent=fDist(rem)+' · '+fT(remT)+' left';
+ if(on&&rem<Math.max(30,Math.min(acc,60))){toast('You have arrived');return stopNav()}
+ // 5) next turn + reported issues ahead on this route
+ if(!rerouting){const t=nextTurn(R,navIdx);
+  if(t){const ab=Math.abs(t.ang),r=t.ang>0;
+   $('hArrow').textContent=ab>=150?'\u21B6':ab>=100?(r?'\u2198':'\u2199'):ab>=60?(r?'\u21B1':'\u21B0'):(r?'\u2197':'\u2196');
+   $('hText').textContent=ab>=150?'Make a U-turn':(ab>=100?'Sharp ':ab>=60?'Turn ':'Slight ')+(r?'right':'left');
+   $('hDist').textContent='In '+fDist(Math.max(0,t.at-trav))}
+  else{$('hArrow').innerHTML='&#8593;';$('hText').textContent='Continue to your destination';$('hDist').textContent=fDist(rem)}
+  const hz=R.haz.filter(x=>x.at+x.h.r>trav).sort((x,y)=>x.at-y.at)[0],gap=hz?hz.at-hz.h.r-trav:0;
+  $('hWarn').textContent=hz&&gap<1500?(gap>0?'Reported ahead in '+fDist(gap)+': ':'You are in a reported area: ')+T[hz.h.type].l:''}
+ // 6) off the route for ~3 updates -> find a new route from here (using the latest reported issues)
+ if(!on){offCnt++;if(offCnt>=3&&Date.now()-lastRe>15000)reroute()}else offCnt=0;
+}
+function navReportsChanged(){ // a NEW issue appeared on the part of the route still ahead of me
+ if(!navOn||!navRoute||rerouting||!myLL||Date.now()-lastRe<15000)return;
+ const rest=navRoute.coords.slice(Math.max(0,navIdx));
+ const fresh=reports.filter(h=>T[h.type].p[mode]&&!navRoute.ids.has(h.id)&&nearest(rest,h.lat,h.lng).d<=h.r+15&&map.distance(myLL,[h.lat,h.lng])>h.r);
+ if(fresh.length){toast('New issue reported ahead: '+T[fresh[0].type].l+'. Checking for a better route...');reroute()}
+}
+async function reroute(){
+ if(rerouting||!myLL||!navOn)return;rerouting=true;lastRe=Date.now();offCnt=0;
+ $('hArrow').innerHTML='&#8635;';$('hDist').textContent='Rerouting';$('hText').textContent='Finding the best route from here...';$('hWarn').textContent='';
+ try{
+  await loadReports(true); // always plan with the latest reported issues
+  st.from={ll:myLL,text:'My current location'};$('from').value='My current location';
+  const ok=await plan();
+  if(ok&&navOn){
+   const open=routes.filter(r=>!r.blocked),pick=minBy(open.length?open:routes,r=>r.score); // best time + issue penalty, never through a closure
+   sel=routes.indexOf(pick);navRoute=prepRoute(pick);navIdx=0;prevLL=null;render();
+   $('hArrow').innerHTML='&#8593;';$('hDist').textContent='New route';$('hText').textContent='Continue - guidance updates as you move';
+   toast(pick.blocked?'Every route is blocked by a reported issue. Drive carefully.':pick.hits.length?'New route found. Some reported issues could not be avoided.':'New route found, clear of reported issues.')}
+  else if(navOn){$('hDist').textContent='Off route';$('hText').textContent='Could not find a new route yet - retrying';toast('Could not find a new route. Will retry.')}
+ }catch(e){}
+ rerouting=false;
+}
+$('hStop').onclick=stopNav;
+$('hZin').onclick=()=>{navZoom=Math.min(19,navZoom+1);map.setZoom(navZoom)};
+$('hZout').onclick=()=>{navZoom=Math.max(14,navZoom-1);map.setZoom(navZoom)};
+
 // ---------- Admin (software handler) ----------
 let adminKey=sessionStorage.getItem('cn.admin')||'';
 const adminOff=()=>{adminKey='';sessionStorage.removeItem('cn.admin');setAdminUI()};
@@ -208,14 +333,15 @@ $('submit').onclick=async()=>{
 
 // ---------- Map clicks ----------
 map.on('click',e=>{
- const ll=[e.latlng.lat,e.latlng.lng];
+ if(navOn)return;const ll=[e.latlng.lat,e.latlng.lng];
  if(location.hash==='#/report')return setPick(ll);
  const k=!st.from?'from':!st.to?'to':'from';if(k==='from')st.to=null,$('to').value='';
  setPin(k,ll);
 });
 function pins(){pinL.clearLayers();
- [['from','Start'],['to','Destination']].forEach(([k,lb])=>{if(!st[k])return;
-  L.marker(st[k].ll,{draggable:true}).addTo(pinL).bindTooltip(lb+' · drag to adjust',{permanent:true,direction:'top'})
+ [['from','Start','#2563eb','S'],['to','Destination','#dc2626','D']].forEach(([k,lb,c,ch])=>{if(!st[k]||(navOn&&k==='from'))return;
+  L.marker(st[k].ll,{draggable:!navOn,icon:L.divIcon({className:'',iconSize:[30,30],iconAnchor:[15,15],html:'<div class="pin" style="background:'+c+'">'+ch+'</div>'})})
+   .addTo(pinL).bindTooltip(lb+' · drag to adjust',{permanent:true,direction:'top',offset:[0,-14]})
    .on('dragend',e=>{const p=e.target.getLatLng();setPin(k,[p.lat,p.lng])})})}
 async function setPin(k,ll){ // pin dropped by click/drag: show a readable name like Google Maps
  const tmp='Dropped pin ('+ll[0].toFixed(4)+', '+ll[1].toFixed(4)+')';$(k).value=tmp;st[k]={ll,text:tmp};pins();
@@ -304,7 +430,7 @@ function locClick(){
 function startTrack(){
  if(!navigator.geolocation)return toast('Location is not supported on this device');
  follow=true;$('locBtn').classList.add('on');
- watchId=navigator.geolocation.watchPosition(onPos,e=>{toast(e.code===1?'Location blocked – allow it in your browser/site settings':'Could not get your location');stopTrack()},{enableHighAccuracy:true,maximumAge:2000,timeout:20000});
+ watchId=navigator.geolocation.watchPosition(onPos,e=>{if(navOn&&e.code!==1)return;toast(e.code===1?'Location blocked – allow it in your browser/site settings':'Could not get your location');stopTrack();if(navOn)stopNav()},{enableHighAccuracy:true,maximumAge:2000,timeout:20000});
 }
 function stopTrack(){
  if(watchId!==null)navigator.geolocation.clearWatch(watchId);watchId=null;myLL=null;wantStart=false;
@@ -319,8 +445,8 @@ function onPos(p){
   if(p.coords.accuracy>1000)toast('Low accuracy – a phone with GPS works best');
  }else{meM.setLatLng(ll);meC.setLatLng(ll);meC.setRadius(p.coords.accuracy)}
  const me=meM.getElement()&&meM.getElement().firstChild,h=p.coords.heading;
- if(me&&h!=null&&!isNaN(h)){me.style.transform='rotate('+h+'deg)';me.classList.add('h')}
- if(first)map.setView(ll,Math.max(map.getZoom(),16));else if(follow)map.panTo(ll);
+ if(me&&navOn){me.style.transform='';me.classList.add('h')}else if(me&&h!=null&&!isNaN(h)){me.style.transform='rotate('+h+'deg)';me.classList.add('h')}
+ if(navOn)navTick(p);else if(first)map.setView(ll,Math.max(map.getZoom(),16));else if(follow)map.panTo(ll);
  if(wantStart){wantStart=false;setStart(ll)}
 }
 map.on('dragstart',()=>{if(watchId!==null){follow=false;$('locBtn').classList.add('free')}});
@@ -331,7 +457,7 @@ $('useMe').onclick=()=>{if(myLL){setStart(myLL);map.setView(myLL,16)}else{wantSt
 // Typical congestion multipliers by hour (index 0-23) for a large Indian city; weekday vs weekend. Edit to calibrate.
 const WD=[1,1,1,1,1,1,1.15,1.4,1.7,1.9,1.7,1.4,1.3,1.3,1.3,1.4,1.6,1.9,2,1.9,1.6,1.3,1.1,1];
 const WE=[1,1,1,1,1,1,1,1.1,1.2,1.3,1.4,1.4,1.4,1.4,1.4,1.4,1.4,1.5,1.5,1.4,1.3,1.2,1.1,1];
-function trafficFactor(t){const v=$('traf').value;if(v!=='auto')return +v;const d=new Date(t);return (d.getDay()%6?WD:WE)[d.getHours()]}
+function trafficFactor(t){const v=$('traf').value;if(v!=='auto'){const n=+v;return n>0?n:1}const d=new Date(t);return (d.getDay()%6?WD:WE)[d.getHours()]}
 function depTime(){const v=$('dep').value;if(!v)return Date.now();const [h,m]=v.split(':').map(Number),d=new Date();d.setHours(h,m,0,0);if(d.getTime()<Date.now()-300000)d.setDate(d.getDate()+1);return d.getTime()}
 function tinfo(){const t=depTime(),F=trafficFactor(t);
  $('tinfo').textContent=mode!=='d'?'':live?'🟢 Live traffic (TomTom) is on for driving.':'🕒 Estimated traffic at '+new Date(t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})+': '+(F===1?'free-flow':'×'+F.toFixed(1))+' (typical pattern, not live).'}
@@ -340,14 +466,32 @@ fetch('/api/traffic?status=1').then(r=>r.json()).then(j=>{live=!!j.enabled;tinfo
 async function osrm(pts){
  if(mode==='d'&&liveOn){try{
   const r=await fetch('/api/traffic?pts='+pts.map(p=>p[0]+','+p[1]).join(':'));if(!r.ok)throw 0;
-  const j=await r.json();if(!j.routes||!j.routes.length)throw 0;return j.routes;
+  const j=await r.json();if(!j.routes||!j.routes.length)throw 0;return j.routes.map(cleanRoute);
  }catch(e){liveOn=false;toast('Live traffic unavailable – using typical traffic estimate')}}
  const F=mode==='d'?trafficFactor(depT):1;
  const u=OSRM[mode==='d'?'d':'f']+pts.map(p=>p[1]+','+p[0]).join(';')+'?overview=full&geometries=geojson&alternatives=true';
- const r=await fetch(u);if(!r.ok)throw new Error('Routing service error '+r.status);
- const j=await r.json();if(j.code!=='Ok')throw new Error('No route found');
- return j.routes.map(x=>({coords:x.geometry.coordinates.map(c=>[c[1],c[0]]),dur:x.duration*F,free:x.duration,dist:x.distance}));
+ let r;
+ try{r=await fetch(u);if(r.status===429||r.status>=500){await new Promise(z=>setTimeout(z,600));r=await fetch(u)}}
+ catch(e){throw new Error('Could not reach the routing service. Check your internet connection.')}
+ if(!r.ok)throw new Error('Routing service busy ('+r.status+'). Please try again in a few seconds.');
+ const j=await r.json();if(j.code!=='Ok')throw new Error('No route found between these two places.');
+ return j.routes.map(x=>cleanRoute({coords:x.geometry.coordinates.map(c=>[c[1],c[0]]),dur:x.duration*F,free:x.duration,dist:x.distance}));
 }
+// A via-point can land in a dead-end street, so the route drives in and comes back out. Cut every such out-and-back stub.
+const lineLen=c=>{let d=0;for(let i=1;i<c.length;i++)d+=map.distance(c[i-1],c[i]);return d};
+function pruneSpurs(co){
+ let c=co.slice(),again=true,guard=0;
+ while(again&&guard++<30){again=false;
+  const cum=[0];for(let i=1;i<c.length;i++)cum.push(cum[i-1]+map.distance(c[i-1],c[i]));
+  outer:for(let i=0;i<c.length-2;i++){
+   for(let j=i+2;j<c.length&&cum[j]-cum[i]<=1500;j++){
+    if(cum[j]-cum[i]<12||map.distance(c[i],c[j])>10)continue;
+    if(map.distance(c[i+1],c[j-1])>12)continue;                                   // same road out and back
+    if(j-i>=6&&map.distance(c[i+2],c[j-2])>20)continue;                           // keeps matching further in
+    c.splice(i+1,j-i);again=true;break outer}}}
+ return c}
+function cleanRoute(r){const c=pruneSpurs(r.coords);if(c.length===r.coords.length)return r;
+ const k=lineLen(c)/(lineLen(r.coords)||1);return{...r,coords:c,dur:r.dur*k,dist:r.dist*k,free:(r.free||r.dur)*k}}
 // ---------- Hazard assessment ----------
 function nearest(co,lat,lng){
  const k=Math.cos(lat*Math.PI/180),Mt=111320,px=lng*k*Mt,py=lat*Mt;let best=1e12,bi=0;
@@ -359,20 +503,24 @@ function nearest(co,lat,lng){
 }
 function score(r){
  r.hits=[];r.pen=0;r.blocked=false;
- reports.forEach(h=>{const p=T[h.type].p[mode];if(!p)return;
+ planRep.forEach(h=>{const p=T[h.type].p[mode];if(!p)return;
   if(nearest(r.coords,h.lat,h.lng).d<=h.r+15){r.hits.push(h);if(p>=HARD){r.blocked=true;r.pen+=HARD}else r.pen+=p*(M[h.sev]||1)}});
  r.delay=r.blocked?0:r.pen*.25;r.eta=r.dur+r.delay;r.score=r.dur+r.pen;return r;
 }
-function detours(r){ // via-points on both sides of the first two blocking hazards
- const out=[];
- r.hits.slice(0,2).forEach(h=>{
-  const n=nearest(r.coords,h.lat,h.lng),a=r.coords[n.i],b=r.coords[n.i+1]||a,k=Math.cos(h.lat*Math.PI/180);
-  let dx=(b[1]-a[1])*k,dy=b[0]-a[0];const L2=Math.hypot(dx,dy)||1;dx/=L2;dy/=L2;
-  [1,-1].forEach(s=>[1.5,2.5].forEach(m=>{const o=(h.r*m+60)/111320;out.push([h.lat+s*dx*o,h.lng-s*dy*o/k])}));});
- return out;
-}
+function ringVias(r){ // candidate via points on a ring around the worst blocking issues (8 directions, 4 for the second issue)
+ const pen=h=>T[h.type].p[mode]*(M[h.sev]||1),hz=r.hits.slice().sort((a,b)=>pen(b)-pen(a)),out=[],N=liveOn?4:8;
+ hz.slice(0,2).forEach((h,idx)=>{const k=Math.cos(h.lat*Math.PI/180),rad=(h.r*1.8+70)/111320,n=idx?Math.max(4,N/2):N;
+  for(let q=0;q<n;q++){const a=2*Math.PI*q/n+(idx?Math.PI/n:0);out.push([h.lat+Math.cos(a)*rad,h.lng+Math.sin(a)*rad/k])}});
+ return out}
+function orderVias(r,vias){ // keep earlier detour points that are still on the route, ordered along it
+ return vias.filter(v=>nearest(r.coords,v[0],v[1]).d<30||!(r.vias||[]).includes(v)).map(v=>[v,nearest(r.coords,v[0],v[1]).i]).sort((a,b)=>a[1]-b[1]).map(x=>x[0])}
 const minBy=(a,f)=>a.reduce((x,y)=>f(y)<f(x)?y:x);
-const dedupe=a=>{const o=[];a.forEach(r=>{if(!o.some(x=>Math.abs(x.dist-r.dist)<x.dist*.015&&Math.abs(x.dur-r.dur)<x.dur*.03))o.push(r)});return o};
+// two routes are 'the same' only if they follow the same roads (compared by path, never just by length)
+function follows(a,b){const n=Math.min(24,a.coords.length);let ok=0;
+ for(let q=0;q<n;q++){const p=a.coords[Math.round(q*(a.coords.length-1)/Math.max(1,n-1))];if(nearest(b.coords,p[0],p[1]).d<=30)ok++}
+ return ok/n>=0.95}
+const sameRoute=(a,b)=>follows(a,b)&&follows(b,a);
+const dedupe=a=>{const o=[];[...a].sort((x,y)=>x.score-y.score).forEach(r=>{if(!o.some(x=>sameRoute(x,r)))o.push(r)});return o}; // best-scoring copy survives
 
 // Rejects detours that dive into a dead-end street and U-turn (route overlaps itself in opposite directions)
 function backtracks(co){
@@ -385,47 +533,59 @@ function backtracks(co){
 // ---------- Planner ----------
 $('go').onclick=plan;
 async function plan(){
- $('go').disabled=true;depT=depTime();liveOn=live&&mode==='d';tinfo();
+ let ok=false;$('go').disabled=true;depT=depTime();liveOn=live&&mode==='d';tinfo();
  try{
   msg('Finding places…');if(st.from&&st.from.text==='My current location'&&myLL){st.from.ll=myLL;pins()}await resolve('from');await resolve('to');
-  const A=st.from.ll,B=st.to.ll;msg('Calculating routes…');
+  const A=st.from.ll,B=st.to.ll;planRep=reports.slice();msg('Calculating routes…');
   let pool=(await osrm([A,B])).map(score);const base=pool[0].dist;
-  for(let i=0;i<2;i++){
+  for(let round=0;round<2;round++){
    const b=minBy(pool,r=>r.score);if(!b.hits.length)break;
-   msg('Looking for detours around '+b.hits.length+' reported issue(s)…');
-   for(const v of detours(b)){try{(await osrm([A,v,B])).slice(0,1).forEach(r=>{if(r.dist<=base*1.8+300&&!backtracks(r.coords))pool.push(score(r))})}catch(e){}}
+   msg('Looking for detours around '+b.hits.length+' reported issue(s)...');
+   const cand=ringVias(b),batch=liveOn?3:4;
+   for(let i=0;i<cand.length;i+=batch){
+    const got=await Promise.allSettled(cand.slice(i,i+batch).map(v=>{const vs=orderVias(b,[...(b.vias||[]),v]);return osrm([A,...vs,B]).then(rs=>({r:rs[0],vs}))}));
+    got.forEach(g=>{if(g.status!=='fulfilled'||!g.value.r)return;const r=score(g.value.r);r.vias=g.value.vs;if(r.dist<=base*1.8+300&&!backtracks(r.coords))pool.push(r)});
+   }
   }
   pool=dedupe(pool);
-  const f=minBy(pool,r=>(r.blocked?1e7:0)+r.eta),s=minBy(pool,r=>r.pen*1e6+r.eta),l=minBy(pool,r=>-r.dist),keep=new Set([f,s,l]);
+  const open=pool.filter(r=>!r.blocked),allBlocked=!open.length,s=minBy(pool,r=>r.pen*1e6+r.eta),f=allBlocked?null:minBy(open,r=>r.eta);
+  let l=open.length>1?minBy(open,r=>-r.eta):null;if(l===f)l=null; // Longest = slowest passable route (expected time)
+  const keep=new Set([f,s,l].filter(Boolean));
   [...pool].sort((x,y)=>x.score-y.score).forEach(r=>{if(keep.size<5)keep.add(r)});
   routes=[...keep].sort((x,y)=>((x.blocked?1e7:0)+x.eta)-((y.blocked?1e7:0)+y.eta));
   routes.forEach((r,i)=>{r.name=String.fromCharCode(65+i);r.col=COL[i]});
-  best={f,s,l};sel=routes.indexOf(s);msg('');
-  render();map.fitBounds(L.polyline(routes[sel].coords).getBounds(),{padding:[50,50]});
+  best={f,s,l,allBlocked};sel=routes.indexOf(s);msg('');
+  render();if(!navOn)map.fitBounds(L.polyline(routes[sel].coords).getBounds(),{padding:[50,50]});ok=true;
  }catch(e){msg('⚠ '+e.message)}
- $('go').disabled=false;
+ $('go').disabled=false;return ok;
 }
 function select(i){sel=i;render();map.fitBounds(L.polyline(routes[i].coords).getBounds(),{padding:[50,50]})}
-$('dash').onclick=e=>{const el=e.target.closest('[data-i]');if(el)select(+el.dataset.i)};
+$('dash').onclick=e=>{if(e.target.closest('#startNav'))return startNav();const el=e.target.closest('[data-i]');if(el)select(+el.dataset.i)};
 
 // ---------- Rendering: dashboard + coloured alternatives ----------
+function blockedMsg(){
+ if(!best.allBlocked)return '';
+ const hardAt=ll=>reports.find(h=>(T[h.type].p[mode]||0)>=HARD&&map.distance(ll,[h.lat,h.lng])<=h.r);
+ const eT=st.to&&hardAt(st.to.ll),eF=st.from&&hardAt(st.from.ll);
+ return '<div class="info">⚠ '+(eT?'Your destination is inside a reported '+esc(T[eT.type].l.toLowerCase())+', so no route can reach it without crossing it.':eF?'Your start point is inside a reported '+esc(T[eF.type].l.toLowerCase())+', so every route leaves through it.':'Every route found crosses a reported blocked spot (closure'+(mode==='w'?', accessibility barrier':'')+' or avoid zone). Try a nearby start or end point, or ask the software handler to check whether the issue is still valid.')+'</div>'}
 function render(){
- const {f,s,l}=best;
- const tile=(ic,lb,r)=>`<div class="tile" data-i="${routes.indexOf(r)}"><small>${ic} ${lb}</small><b style="color:${r.col}">Route ${r.name}</b><small>${fT(r.eta)} · ${fD(r.dist)}</small></div>`;
- $('dash').innerHTML=`<div class="tiles">${tile('🛡','Safest',s)}${tile('⚡','Fastest',f)}${tile('📏','Longest',l)}</div>`+
+ const {f,s,l,allBlocked}=best,ref=f||minBy(routes,r=>r.eta);
+ const tile=(ic,lb,r)=>r?`<div class="tile" data-i="${routes.indexOf(r)}"><small>${ic} ${lb}</small><b style="color:${r.col}">Route ${r.name}</b><small>${fT(r.eta)} · ${fD(r.dist)}</small></div>`:`<div class="tile"><small>${ic} ${lb}</small><b>-</b><small>None available</small></div>`;
+ $('dash').innerHTML=`<div class="tiles">${tile('🛡',allBlocked?'Least blocked':'Safest',s)}${tile('⚡','Fastest',f)}${tile('🐢','Longest',l)}</div>`+
  routes.map((r,i)=>{
   const bd=(t,c)=>`<span class="badge" style="background:${c}">${t}</span>`;
-  const d=Math.round((r.eta-f.eta)/60);
+  const d=Math.round((r.eta-ref.eta)/60);
   return `<div class="rt ${i===sel?'on':''}" data-i="${i}"><div class="bar" style="background:${r.col}"></div><div style="flex:1">
-   <div><b>Route ${r.name}</b>${r===s?bd('Safest','#059669'):''}${r===f?bd('Fastest','#2563eb'):''}${r===l?bd('Longest','#9333ea'):''}${r.blocked?bd('Blocked','#dc2626'):''}</div>
+   <div><b>Route ${r.name}</b>${r===s?bd(allBlocked?'Least blocked':'Safest','#059669'):''}${r===f?bd('Fastest','#2563eb'):''}${r===l?bd('Longest','#9333ea'):''}${r.blocked?bd('Blocked','#dc2626'):''}</div>
    <div class="big">${r.blocked?'Not passable':'Arrive '+clock(r.eta)} <span>· ${fT(r.blocked?r.dur:r.eta)}</span></div>
-   <div class="mut">📏 ${fD(r.dist)} · ${r.hits.length?'⚠ '+r.hits.length+' issue'+(r.hits.length>1?'s':''):'✓ No reported issues'}${r.dur-r.free>=120?' · traffic +'+Math.round((r.dur-r.free)/60)+' min':''}${r.delay>=60?' · incl. ~'+Math.round(r.delay/60)+' min delay':''}${r!==f?' · '+(d>=0?'+':'')+d+' min vs fastest':''}</div>
+   <div class="mut">📏 ${fD(r.dist)} · ${r.hits.length?'⚠ '+r.hits.length+' issue'+(r.hits.length>1?'s':''):'✓ No reported issues'}${r.dur-r.free>=120?' · traffic +'+Math.round((r.dur-r.free)/60)+' min':''}${r.delay>=60?' · incl. ~'+Math.round(r.delay/60)+' min delay':''}${!r.blocked&&f&&r!==f?' · '+(d>=0?'+':'')+d+' min vs fastest':''}</div>
    ${i===sel&&r.hits.length?'<ul>'+r.hits.map(h=>`<li>${T[h.type].e} ${esc(T[h.type].l)}${h.note?' – '+esc(h.note):''}</li>`).join('')+'</ul>':''}
   </div></div>`}).join('')+
- (best.s.blocked?'<div class="info">⚠ Every route found crosses a blocked spot. Try different start/end points.</div>':'')+
+ '<button class="btn" id="startNav" type="button" style="margin-bottom:10px">Start navigation on Route '+routes[sel].name+'</button>'+
+ blockedMsg()+
  (mode==='w'?'<p class="mut">Wheelchair mode uses OSM walking paths and avoids community-reported ramps, stairs and broken footpaths. Always verify on site.</p>':'');
  routeL.clearLayers();let top;
- routes.forEach((r,i)=>{const on=i===sel;
+ routes.forEach((r,i)=>{const on=i===sel;if(navOn&&!on)return;
   const p=L.polyline(r.coords,{color:r.col,weight:on?8:5,opacity:on?1:.7,dashArray:on?null:'2 9',lineCap:'round'}).addTo(routeL);p.on('click',()=>select(i));if(on)top=p;
   const m=r.coords[Math.floor(r.coords.length*(.25+.13*i))];
   L.marker(m,{icon:L.divIcon({className:'',iconSize:[0,0],html:`<span class="rl" style="background:${r.col}">${r.name} · ${Math.round(r.eta/60)} min</span>`})}).addTo(routeL).on('click',()=>select(i));});
