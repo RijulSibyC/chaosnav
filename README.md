@@ -16,6 +16,7 @@
 | **Community issue reporting** | Separate report page: 8 types (flood, closure, accident, damaged road, missing ramp, broken footpath, stairs, hard avoid zone), severity, radius, note. Anyone can report. |
 | **Shared + auto-expiring** | Reports are shared with all users, hidden after **48 hours**, then archived in this repo. |
 | **Hazard-aware routing** | Active reports add time penalties; closures/avoid zones block a route. Detours are tried around hazards. |
+| **Vehicle profiles** | Car (Standard, Hatchback 1.70 m, Sedan 1.80 m, SUV 1.95 m, or any custom width) and Two-wheeler. Cars are kept off roads too narrow for them (SUVs stay on main and collector roads); two-wheelers may use narrow lanes (gallis) and are slowed less by congestion. |
 | **Walk & wheelchair modes** | Wheelchair mode treats missing ramps, stairs and broken footpaths as hard blocks. |
 | **Traffic-aware ETA** | Typical congestion by time of day/weekday, manual levels, departure time. Optional **live traffic** (TomTom). |
 | **Live location** | Blue dot that moves with you, follow mode, "use my location as start". |
@@ -46,13 +47,14 @@ User ─► Web app (Leaflet) ─► Netlify Functions ─► GitHub repo (repor
 
 1. **Search** – user types a place; suggestions are ranked and shown; user picks one or drags the pin.
 2. **Routes** – app loads active reports from `/api/reports` and asks OSRM (or TomTom) for routes; times adjusted for traffic.
-3. **Assess** – each route = travel time + penalties for reports within their radius. Hard blocks make it "not passable".
-4. **Detour** – if the best route still crosses issues, via-point detours are tried (dead-ends and over-long ones rejected).
-5. **Show** – dashboard lists Safest / Fastest / Longest; user chooses.
-6. **Report** – new issue → `POST /api/reports` → function commits it to `data/active.json`. Everyone sees it on next refresh.
-7. **Expire & archive** – after 48 h it stops appearing; the hourly Action moves it to `data/archive/YYYY-MM.json`.
-8. **Navigate** – "Start on Route X" follows the phone's GPS, rotates the map to the direction of travel and shows the next turn. If the position stays more than about 45 m from the route for a few seconds, or a new issue is reported on the part of the route still ahead, the app reloads the latest reports and re-plans from the current location to the same destination, never choosing a route through a closure.
-9. **Moderate** – admin signs in; server checks the password and deletes the report with a commit.
+3. **Fit the vehicle** – for car and two-wheeler profiles the router also returns the speed of every road piece. Speed gives the road class (lane, inner street, collector, main road) and an estimated width (2.6, 4.2, 6.5, 9 m). A road needs at least vehicle width + 1.0 m to be passable and 2 x width + 1.0 m to be comfortable. Too-narrow stretches block a route, tight ones add a time penalty, and the first and last 250 m are exempt.
+4. **Assess** – each route = travel time + penalties for reports within their radius. Hard blocks make it "not passable".
+5. **Detour** – if the best route still crosses issues, via-point detours are tried (dead-ends and over-long ones rejected).
+6. **Show** – dashboard lists Safest / Fastest / Longest; user chooses.
+7. **Report** – new issue → `POST /api/reports` → function commits it to `data/active.json`. Everyone sees it on next refresh.
+8. **Expire & archive** – after 48 h it stops appearing; the hourly Action moves it to `data/archive/YYYY-MM.json`.
+9. **Navigate** – "Start on Route X" follows the phone's GPS, rotates the map to the direction of travel and shows the next turn. If the position stays more than about 45 m from the route for a few seconds, or a new issue is reported on the part of the route still ahead, the app reloads the latest reports and re-plans from the current location to the same destination, never choosing a route through a closure.
+10. **Moderate** – admin signs in; server checks the password and deletes the report with a commit.
 
 ## Project structure
 
@@ -152,6 +154,8 @@ git push
 | Labels and colours | search the label text in `public/index.html` (Ctrl + Shift + F) |
 
 ## Limitations
+- Road width is an estimate from road class, because OpenStreetMap rarely records lane width. Vehicle height clearance is not modelled. Parked vehicles, local narrowings and expressway bans for two-wheelers are not modelled.
+- Live traffic is paused while a vehicle width is set, because the live route has no road-class data.
 - Public OSRM, Photon and Nominatim servers are for light use; heavy traffic needs self-hosted servers.
 - Without a TomTom key, traffic is a typical-pattern estimate, not live.
 - Reports are not verified; one shared admin password (no individual accounts).

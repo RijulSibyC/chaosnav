@@ -60,11 +60,11 @@ body.nav #mapwrap{flex:1!important;height:auto!important}
 body.nav .rl,body.nav .leaflet-tooltip,body.nav .leaflet-control-container{display:none}
 body.nav .pin,body.nav .me{transform:rotate(var(--ctr,0deg))}
 .pin{color:#fff;font-weight:700}
+#modes button{font-size:13px;padding:9px 2px}.mut.warn{color:var(--warn)}.mut.ok{color:var(--ok)}
 .pin{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;border:2px solid #fff;box-shadow:0 1px 5px #0006;font-size:15px}
 .rl{display:inline-block;color:#fff;font-weight:700;font-size:12px;padding:2px 8px;border-radius:99px;white-space:nowrap;box-shadow:0 1px 4px #0006;transform:translate(-50%,-50%)}
 #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;z-index:9999;max-width:90%}
 @media(max-width:800px){main{flex-direction:column-reverse}#panel{width:100%;height:58%}#mapwrap{flex:none;height:42%}}
-
 </style></head><body>
 <header><div class="brand">🧭 Chaos<b>Nav</b></div><div><button id="adminBtn" class="chip" style="border:0;color:#fff;cursor:pointer;margin-right:8px">🔒 Admin</button><span id="sync" class="chip">connecting…</span></div></header>
 <main>
@@ -76,7 +76,10 @@ body.nav .pin,body.nav .me{transform:rotate(var(--ctr,0deg))}
    <div class="ac"><input type="text" id="from" autocomplete="off" placeholder="📍 Start – place, area or landmark"><div class="sug" id="sug-from" hidden></div></div>
    <div class="ac"><input type="text" id="to" autocomplete="off" placeholder="🏁 Destination"><div class="sug" id="sug-to" hidden></div></div>
    <button class="btn alt" id="useMe" type="button" style="margin-bottom:8px">📍 Use my location as start</button>
-   <div class="seg" id="modes"><button data-m="d" class="on">🚗 Drive</button><button data-m="f">🚶 Walk</button><button data-m="w">♿ Wheelchair</button></div>
+   <div class="seg" id="modes"><button data-m="d" class="on">🚗 Car</button><button data-m="t">🛵 2-Wheeler</button><button data-m="f">🚶 Walk</button><button data-m="w">♿ Wheelchair</button></div>
+   <div id="vehBox" class="two"><label>Vehicle<select id="vtype"><option value="std">Standard car</option><option value="1.70">Hatchback</option><option value="1.80">Sedan</option><option value="1.95">SUV</option><option value="custom">Custom width</option></select></label>
+    <label>Vehicle width (m)<input type="number" id="vwid" min="1.2" max="2.6" step="0.05" value="1.70"></label></div>
+   <div class="mut" id="vinfo" style="margin-bottom:8px"></div>
    <div class="two"><label>Depart at<input type="time" id="dep" title="Leave empty for now"></label>
     <label>Traffic<select id="traf"><option value="auto">Auto (typical)</option><option value="1">None (free-flow)</option><option value="1.3">Light</option><option value="1.6">Moderate</option><option value="2">Heavy</option></select></label></div>
    <div class="mut" id="tinfo" style="margin-bottom:8px"></div>
@@ -132,6 +135,9 @@ const T={
  stairs:{l:'Stairs / steps',e:'🪜',c:'#0891b2',r:25,p:{d:0,f:0,w:1e5}},
  avoid:{l:'Hard avoid zone',e:'⛔',c:'#475569',r:200,p:{d:1e5,f:1e5,w:1e5}}};
 const M={1:.6,2:1,3:1.5},SEV={1:'Low',2:'Medium',3:'High'};
+// two-wheelers (key 't'): water stalls engines and potholes hurt more; stairs/ramps never matter on a road
+const P2={flood:4500,closure:1e5,accident:600,damaged:900,ramp:0,footpath:0,stairs:0,avoid:1e5};Object.keys(T).forEach(k=>T[k].p.t=P2[k]);
+const isVeh=m=>m==='d'||m==='t';
 const OSRM={d:'https://router.project-osrm.org/route/v1/driving/',f:'https://routing.openstreetmap.de/routed-foot/route/v1/foot/'};
 const COL=['#2563eb','#059669','#9333ea','#ea580c','#db2777'];
 const fT=s=>{s=Math.round(s/60);return s<60?s+' min':Math.floor(s/60)+' h '+s%60+' min'};
@@ -141,7 +147,7 @@ const clock=s=>new Date(depT+s*1000).toLocaleTimeString([],{hour:'2-digit',minut
 const left=h=>{const m=Math.max(1,Math.round((h.exp-Date.now())/60000));return m>=60?Math.round(m/60)+' h':m+' min'};
 const toast=t=>{const e=$('toast');e.textContent=t;e.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>e.hidden=true,4000)};
 const msg=t=>$('msg').textContent=t||'';
-let planRep=[],mode='d',reports=[],remote=false,routes=[],best={},sel=0,st={from:null,to:null};
+let annOK=true,planRep=[],mode='d',reports=[],remote=false,routes=[],best={},sel=0,st={from:null,to:null};
 let navOn=false,navRoute=null,navIdx=0,navB=0,navZoom=18,prevLL=null,offCnt=0,lastRe=0,rerouting=false,wl=null;
 
 // ---------- Map ----------
@@ -348,7 +354,7 @@ async function setPin(k,ll){ // pin dropped by click/drag: show a readable name 
  const tmp='Dropped pin ('+ll[0].toFixed(4)+', '+ll[1].toFixed(4)+')';$(k).value=tmp;st[k]={ll,text:tmp};pins();
  try{const r=await fetch('https://photon.komoot.io/reverse?lang=en&lat='+ll[0]+'&lon='+ll[1]);const f=(await r.json()).features[0];
   if(f&&st[k]&&st[k].text===tmp){const t=photonLabel(f).join(', ');if(t){$(k).value=t;st[k].text=t}}}catch(e){}}
-$('modes').onclick=e=>{const b=e.target.closest('button');if(!b)return;mode=b.dataset.m;[...$('modes').children].forEach(x=>x.classList.toggle('on',x===b));tinfo()};
+$('modes').onclick=e=>{const b=e.target.closest('button');if(!b)return;mode=b.dataset.m;[...$('modes').children].forEach(x=>x.classList.toggle('on',x===b));vehUI()};
 
 // ---------- Place search with suggestions (Photon: OSM search-as-you-type, no key) ----------
 function photonLabel(f){const p=f.properties||{},st=p.street?(p.housenumber?p.housenumber+' ':'')+p.street:'';
@@ -460,28 +466,80 @@ const WD=[1,1,1,1,1,1,1.15,1.4,1.7,1.9,1.7,1.4,1.3,1.3,1.3,1.4,1.6,1.9,2,1.9,1.6
 const WE=[1,1,1,1,1,1,1,1.1,1.2,1.3,1.4,1.4,1.4,1.4,1.4,1.4,1.4,1.5,1.5,1.4,1.3,1.2,1.1,1];
 function trafficFactor(t){const v=$('traf').value;if(v!=='auto'){const n=+v;return n>0?n:1}const d=new Date(t);return (d.getDay()%6?WD:WE)[d.getHours()]}
 function depTime(){const v=$('dep').value;if(!v)return Date.now();const [h,m]=v.split(':').map(Number),d=new Date();d.setHours(h,m,0,0);if(d.getTime()<Date.now()-300000)d.setDate(d.getDate()+1);return d.getTime()}
-function tinfo(){const t=depTime(),F=trafficFactor(t);
- $('tinfo').textContent=mode!=='d'?'':live?'🟢 Live traffic (TomTom) is on for driving.':'🕒 Estimated traffic at '+new Date(t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})+': '+(F===1?'free-flow':'×'+F.toFixed(1))+' (typical pattern, not live).'}
+function tinfo(){const t=depTime(),F=trafficFactor(t),tm=new Date(t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),
+ est='Estimated traffic at '+tm+': '+(F===1?'free-flow':'x'+F.toFixed(1))+' (typical pattern, not live).';
+ $('tinfo').textContent=!isVeh(mode)?'':mode==='t'?est+' Two-wheelers are slowed less by congestion.':(live&&!needAnn())?'Live traffic (TomTom) is on for driving.':(live?'Live traffic is paused while a vehicle width is set. ':'')+est}
 ['dep','traf'].forEach(i=>$(i).onchange=tinfo);
 fetch('/api/traffic?status=1').then(r=>r.json()).then(j=>{live=!!j.enabled;tinfo()}).catch(()=>{});
+// ---------- Vehicle profile: width-aware routing ----------
+// OSM has road width for few Indian lanes, so width is estimated from the road class the router reports (via its speed for that road).
+const CLS={gali:{w:2.6,n:'narrow lane (gali)'},street:{w:4.2,n:'inner street'},collector:{w:6.5,n:'collector road'},arterial:{w:9,n:'main road'}};
+const classOf=k=>k<=16?'gali':k<=30?'street':k<=50?'collector':'arterial';
+const ACCESS=250; // metres at each end are exempt: your start and destination are often on small streets
+const PRESET={'1.70':'Hatchback','1.80':'Sedan','1.95':'SUV'};
+function vehicle(){
+ if(mode==='t')return{kind:'two',w:0.8,name:'Two-wheeler'};
+ if(mode!=='d')return{kind:'std'};
+ const v=$('vtype').value;if(v==='std')return{kind:'std'};
+ const w=Math.min(2.6,Math.max(1.2,+$('vwid').value||1.7));
+ return{kind:'car',w,name:(PRESET[v]||'Custom')+' ('+w.toFixed(2)+' m)'}}
+const needAnn=()=>vehicle().kind!=='std';
+const reqW=V=>({hard:V.w+1.0,need:2*V.w+1.0}); // narrowest passable road / comfortable two-way road
+function vehUI(){
+ $('vehBox').hidden=mode!=='d';const V=vehicle();
+ $('vinfo').textContent=V.kind==='two'?'Two-wheelers can use narrow lanes (gallis, about 2.6 m). Congestion slows you less than cars.':
+  V.kind==='car'?'Needs roads at least '+reqW(V).hard.toFixed(1)+' m wide, comfortable from '+reqW(V).need.toFixed(1)+' m. Narrow lanes (~2.6 m) are '+(CLS.gali.w<reqW(V).hard?'avoided':'allowed')+'; inner streets (~4.2 m) are '+(CLS.street.w<reqW(V).need?'discouraged':'fine')+'.':'';
+ tinfo()}
+$('vtype').onchange=()=>{const v=$('vtype').value;if(PRESET[v])$('vwid').value=v;vehUI()};
+$('vwid').oninput=()=>{const v=(+$('vwid').value).toFixed(2);$('vtype').value=PRESET[v]?v:'custom';vehUI()};
+function segData(x,n){ // per-segment speed (m/s) and length (m) from the router, one entry per pair of coordinates
+ try{const sp=[],ds=[];x.legs.forEach(l=>{l.annotation.speed.forEach(v=>sp.push(v));l.annotation.distance.forEach(v=>ds.push(v))});
+  return sp.length===n-1&&ds.length===n-1?{sp,ds}:null}catch(e){return null}}
+function classes(seg){ // a signal or a turn slows ONE segment, so use the fastest speed within +-40 m to classify the road
+ const{sp,ds}=seg,n=sp.length,pos=[],out=new Array(n);let a=0,lo=0,hi=0;
+ for(let i=0;i<n;i++){pos.push(a+ds[i]/2);a+=ds[i]}
+ for(let i=0;i<n;i++){while(pos[lo]<pos[i]-40)lo++;while(hi<n&&pos[hi]<=pos[i]+40)hi++;
+  let m=0;for(let j=lo;j<hi;j++)if(ds[j]>=1&&sp[j]>m)m=sp[j];out[i]=m>0.5?classOf(m*3.6):'arterial'}
+ return out}
+function twoFac(seg,Fb){ // two-wheelers filter through jams: big roads slow them less than cars, lanes even less
+ const cl=classes(seg),k={gali:.3,street:.45,collector:.6,arterial:.6};let w=0,s=0;
+ for(let i=0;i<cl.length;i++){const t=seg.ds[i]/Math.max(seg.sp[i],0.5);w+=t;s+=t*(1+(Fb-1)*k[cl[i]])}
+ return w>0?s/w:1+(Fb-1)*.5}
+function assess(r){ // which parts of this route are too narrow for the chosen vehicle?
+ r.narrow=[];r.wBlock=false;const V=vehicle();if(V.kind==='std'||!r.seg)return;
+ const{hard,need}=reqW(V),cl=classes(r.seg),ds=r.seg.ds,total=ds.reduce((x,y)=>x+y,0);let at=0,run=null;
+ for(let i=0;i<cl.length;i++){
+  const w=CLS[cl[i]].w,mid=at+ds[i]/2,ex=mid<ACCESS||mid>total-ACCESS,st=w<hard?2:w<need?1:0,key=st?cl[i]+(ex?'|x':'|r'):null;at+=ds[i];
+  if(key&&run&&run.key===key){run.len+=ds[i];run.b=i}
+  else{if(run)r.narrow.push(run);run=key?{key,cls:cl[i],st,ex,len:ds[i],a:i,b:i,w}:null}}
+ if(run)r.narrow.push(run);
+ r.narrow.forEach(n=>{n.ll=r.coords[Math.min(r.coords.length-1,Math.round((n.a+n.b+1)/2))];n.pen=0;
+  if(n.ex)return;                                                       // access stretch: shown as a note only
+  if(n.st===2){r.wBlock=true;r.blocked=true;n.pen=HARD}
+  else{n.pen=n.len*(0.2+8*(need-n.w)/need);r.pen+=n.pen}});            // tight: time penalty grows with the shortfall
+ if(r.wBlock)r.pen+=HARD}
+
 async function osrm(pts){
  if(mode==='d'&&liveOn){try{
   const r=await fetch('/api/traffic?pts='+pts.map(p=>p[0]+','+p[1]).join(':'));if(!r.ok)throw 0;
   const j=await r.json();if(!j.routes||!j.routes.length)throw 0;return j.routes.map(cleanRoute);
  }catch(e){liveOn=false;toast('Live traffic unavailable – using typical traffic estimate')}}
- const F=mode==='d'?trafficFactor(depT):1;
- const u=OSRM[mode==='d'?'d':'f']+pts.map(p=>p[1]+','+p[0]).join(';')+'?overview=full&geometries=geojson&alternatives=true';
+ const ann=needAnn()&&annOK,Fb=isVeh(mode)?trafficFactor(depT):1;
+ const base=OSRM[isVeh(mode)?'d':'f']+pts.map(p=>p[1]+','+p[0]).join(';')+'?overview=full&geometries=geojson&alternatives=true';
+ const get=async u=>{let r=await fetch(u);if(r.status===429||r.status>=500){await new Promise(z=>setTimeout(z,600));r=await fetch(u)}return r};
  let r;
- try{r=await fetch(u);if(r.status===429||r.status>=500){await new Promise(z=>setTimeout(z,600));r=await fetch(u)}}
+ try{r=await get(base+(ann?'&annotations=speed,distance':''));if(ann&&r.status===400){annOK=false;r=await get(base)}} // server without annotations: carry on without width data
  catch(e){throw new Error('Could not reach the routing service. Check your internet connection.')}
  if(!r.ok)throw new Error('Routing service busy ('+r.status+'). Please try again in a few seconds.');
  const j=await r.json();if(j.code!=='Ok')throw new Error('No route found between these two places.');
- return j.routes.map(x=>cleanRoute({coords:x.geometry.coordinates.map(c=>[c[1],c[0]]),dur:x.duration*F,free:x.duration,dist:x.distance}));
+ return j.routes.map(x=>{const co=x.geometry.coordinates.map(c=>[c[1],c[0]]),seg=ann&&annOK?segData(x,co.length):null,
+  F=mode==='t'?(seg?twoFac(seg,Fb):1+(Fb-1)*.55):Fb;
+  return cleanRoute({coords:co,seg,dur:x.duration*F,free:x.duration,dist:x.distance})});
 }
 // A via-point can land in a dead-end street, so the route drives in and comes back out. Cut every such out-and-back stub.
 const lineLen=c=>{let d=0;for(let i=1;i<c.length;i++)d+=map.distance(c[i-1],c[i]);return d};
-function pruneSpurs(co){
- let c=co.slice(),again=true,guard=0;
+function pruneCore(co,sp,ds){
+ let c=co.slice(),s=sp?sp.slice():null,d=ds?ds.slice():null,again=true,guard=0;
  while(again&&guard++<30){again=false;
   const cum=[0];for(let i=1;i<c.length;i++)cum.push(cum[i-1]+map.distance(c[i-1],c[i]));
   outer:for(let i=0;i<c.length-2;i++){
@@ -489,10 +547,11 @@ function pruneSpurs(co){
     if(cum[j]-cum[i]<12||map.distance(c[i],c[j])>10)continue;
     if(map.distance(c[i+1],c[j-1])>12)continue;                                   // same road out and back
     if(j-i>=6&&map.distance(c[i+2],c[j-2])>20)continue;                           // keeps matching further in
-    c.splice(i+1,j-i);again=true;break outer}}}
- return c}
-function cleanRoute(r){const c=pruneSpurs(r.coords);if(c.length===r.coords.length)return r;
- const k=lineLen(c)/(lineLen(r.coords)||1);return{...r,coords:c,dur:r.dur*k,dist:r.dist*k,free:(r.free||r.dur)*k}}
+    c.splice(i+1,j-i);if(s){s.splice(i,j-i);d.splice(i,j-i)}again=true;break outer}}}
+ return{c,s,d}}
+const pruneSpurs=co=>pruneCore(co).c;
+function cleanRoute(r){const p=pruneCore(r.coords,r.seg&&r.seg.sp,r.seg&&r.seg.ds);if(p.c.length===r.coords.length)return r;
+ const k=lineLen(p.c)/(lineLen(r.coords)||1);return{...r,coords:p.c,seg:r.seg?{sp:p.s,ds:p.d}:null,dur:r.dur*k,dist:r.dist*k,free:(r.free||r.dur)*k}}
 // ---------- Hazard assessment ----------
 function nearest(co,lat,lng){
  const k=Math.cos(lat*Math.PI/180),Mt=111320,px=lng*k*Mt,py=lat*Mt;let best=1e12,bi=0;
@@ -506,10 +565,15 @@ function score(r){
  r.hits=[];r.pen=0;r.blocked=false;
  planRep.forEach(h=>{const p=T[h.type].p[mode];if(!p)return;
   if(nearest(r.coords,h.lat,h.lng).d<=h.r+15){r.hits.push(h);if(p>=HARD){r.blocked=true;r.pen+=HARD}else r.pen+=p*(M[h.sev]||1)}});
+ assess(r);const hardHit=r.hits.some(h=>(T[h.type].p[mode]||0)>=HARD);r.blockWhy=!r.blocked?'':r.wBlock&&hardHit?'both':r.wBlock?'width':'issue';
  r.delay=r.blocked?0:r.pen*.25;r.eta=r.dur+r.delay;r.score=r.dur+r.pen;return r;
 }
-function ringVias(r){ // candidate via points on a ring around the worst blocking issues (8 directions, 4 for the second issue)
- const pen=h=>T[h.type].p[mode]*(M[h.sev]||1),hz=r.hits.slice().sort((a,b)=>pen(b)-pen(a)),out=[],N=liveOn?4:8;
+function hazardList(r){ // reported issues + narrow stretches that matter, as {lat,lng,r,pen}
+ const a=r.hits.map(h=>({lat:h.lat,lng:h.lng,r:h.r,pen:T[h.type].p[mode]*(M[h.sev]||1)}));
+ (r.narrow||[]).forEach(n=>{if(!n.ex&&n.ll&&n.pen>=120)a.push({lat:n.ll[0],lng:n.ll[1],r:40,pen:n.pen})});
+ return a}
+function ringVias(r){ // candidate via points on a ring around the worst blockers (8 directions, 4 for the second one)
+ const hz=hazardList(r).sort((a,b)=>b.pen-a.pen),out=[],N=liveOn?4:8;
  hz.slice(0,2).forEach((h,idx)=>{const k=Math.cos(h.lat*Math.PI/180),rad=(h.r*1.8+70)/111320,n=idx?Math.max(4,N/2):N;
   for(let q=0;q<n;q++){const a=2*Math.PI*q/n+(idx?Math.PI/n:0);out.push([h.lat+Math.cos(a)*rad,h.lng+Math.sin(a)*rad/k])}});
  return out}
@@ -534,14 +598,14 @@ function backtracks(co){
 // ---------- Planner ----------
 $('go').onclick=plan;
 async function plan(){
- let ok=false;$('go').disabled=true;depT=depTime();liveOn=live&&mode==='d';tinfo();
+ let ok=false;$('go').disabled=true;depT=depTime();annOK=true;liveOn=live&&mode==='d'&&!needAnn();tinfo();
  try{
   msg('Finding places…');if(st.from&&st.from.text==='My current location'&&myLL){st.from.ll=myLL;pins()}await resolve('from');await resolve('to');
   const A=st.from.ll,B=st.to.ll;planRep=reports.slice();msg('Calculating routes…');
   let pool=(await osrm([A,B])).map(score);const base=pool[0].dist;
   for(let round=0;round<2;round++){
-   const b=minBy(pool,r=>r.score);if(!b.hits.length)break;
-   msg('Looking for detours around '+b.hits.length+' reported issue(s)...');
+   const b=minBy(pool,r=>r.score);if(!hazardList(b).length)break;
+   msg('Looking for detours around '+hazardList(b).length+' blocker(s): reported issues or narrow roads...');
    const cand=ringVias(b),batch=liveOn?3:4;
    for(let i=0;i<cand.length;i+=batch){
     const got=await Promise.allSettled(cand.slice(i,i+batch).map(v=>{const vs=orderVias(b,[...(b.vias||[]),v]);return osrm([A,...vs,B]).then(rs=>({r:rs[0],vs}))}));
@@ -564,11 +628,20 @@ function select(i){sel=i;render();map.fitBounds(L.polyline(routes[i].coords).get
 $('dash').onclick=e=>{if(e.target.closest('#startNav'))return startNav();const el=e.target.closest('[data-i]');if(el)select(+el.dataset.i)};
 
 // ---------- Rendering: dashboard + coloured alternatives ----------
+function narrowLine(r){
+ const V=vehicle();if(V.kind==='std'||!r.seg)return '';
+ const bad=(r.narrow||[]).filter(n=>!n.ex),blk=bad.filter(n=>n.st===2),tight=bad.filter(n=>n.st===1),acc=(r.narrow||[]).some(n=>n.ex&&n.st===2),L=a=>a.reduce((x,n)=>x+n.len,0);
+ let h=!bad.length?'<div class="mut ok">Fits '+esc(V.name)+': no roads too narrow</div>':'';
+ if(blk.length)h+='<div class="mut warn">Too narrow for '+esc(V.name)+': '+fDist(L(blk))+' of '+esc(CLS[blk[0].cls].n)+'</div>';
+ if(tight.length)h+='<div class="mut warn">Tight for '+esc(V.name)+': '+fDist(L(tight))+' of '+esc(CLS[tight[0].cls].n)+'</div>';
+ if(acc)h+='<div class="mut">The first or last stretch is a narrow lane. Park nearby if it does not fit.</div>';
+ return h}
+function vehNotice(){return needAnn()&&routes.length&&!routes.some(r=>r.seg)?'<div class="info">Road-width data is not available from the routing server right now, so your vehicle size was not applied to these routes.</div>':''}
 function blockedMsg(){
  if(!best.allBlocked)return '';
  const hardAt=ll=>reports.find(h=>(T[h.type].p[mode]||0)>=HARD&&map.distance(ll,[h.lat,h.lng])<=h.r);
  const eT=st.to&&hardAt(st.to.ll),eF=st.from&&hardAt(st.from.ll);
- return '<div class="info">⚠ '+(eT?'Your destination is inside a reported '+esc(T[eT.type].l.toLowerCase())+', so no route can reach it without crossing it.':eF?'Your start point is inside a reported '+esc(T[eF.type].l.toLowerCase())+', so every route leaves through it.':'Every route found crosses a reported blocked spot (closure'+(mode==='w'?', accessibility barrier':'')+' or avoid zone). Try a nearby start or end point, or ask the software handler to check whether the issue is still valid.')+'</div>'}
+ return '<div class="info">⚠ '+(eT?'Your destination is inside a reported '+esc(T[eT.type].l.toLowerCase())+', so no route can reach it without crossing it.':eF?'Your start point is inside a reported '+esc(T[eF.type].l.toLowerCase())+', so every route leaves through it.':(routes.some(r=>r.wBlock)?'No route found that fits your '+esc(vehicle().name)+' (roads must be at least '+reqW(vehicle()).hard.toFixed(1)+' m wide) and avoids the reported issues. Try another vehicle profile, or a start or end point on a main road. ':'')+'Every route found crosses a reported blocked spot (closure'+(mode==='w'?', accessibility barrier':'')+' or avoid zone). Try a nearby start or end point, or ask the software handler to check whether the issue is still valid.')+'</div>'}
 function render(){
  const {f,s,l,allBlocked}=best,ref=f||minBy(routes,r=>r.eta);
  const tile=(ic,lb,r)=>r?`<div class="tile" data-i="${routes.indexOf(r)}"><small>${ic} ${lb}</small><b style="color:${r.col}">Route ${r.name}</b><small>${fT(r.eta)} · ${fD(r.dist)}</small></div>`:`<div class="tile"><small>${ic} ${lb}</small><b>-</b><small>None available</small></div>`;
@@ -578,12 +651,12 @@ function render(){
   const d=Math.round((r.eta-ref.eta)/60);
   return `<div class="rt ${i===sel?'on':''}" data-i="${i}"><div class="bar" style="background:${r.col}"></div><div style="flex:1">
    <div><b>Route ${r.name}</b>${r===s?bd(allBlocked?'Least blocked':'Safest','#059669'):''}${r===f?bd('Fastest','#2563eb'):''}${r===l?bd('Longest','#9333ea'):''}${r.blocked?bd('Blocked','#dc2626'):''}</div>
-   <div class="big">${r.blocked?'Not passable':'Arrive '+clock(r.eta)} <span>· ${fT(r.blocked?r.dur:r.eta)}</span></div>
+   <div class="big">${r.blocked?(r.blockWhy==='width'?'Too narrow for your vehicle':'Not passable'):'Arrive '+clock(r.eta)} <span>· ${fT(r.blocked?r.dur:r.eta)}</span></div>
    <div class="mut">📏 ${fD(r.dist)} · ${r.hits.length?'⚠ '+r.hits.length+' issue'+(r.hits.length>1?'s':''):'✓ No reported issues'}${r.dur-r.free>=120?' · traffic +'+Math.round((r.dur-r.free)/60)+' min':''}${r.delay>=60?' · incl. ~'+Math.round(r.delay/60)+' min delay':''}${!r.blocked&&f&&r!==f?' · '+(d>=0?'+':'')+d+' min vs fastest':''}</div>
-   ${i===sel&&r.hits.length?'<ul>'+r.hits.map(h=>`<li>${T[h.type].e} ${esc(T[h.type].l)}${h.note?' – '+esc(h.note):''}</li>`).join('')+'</ul>':''}
+   ${narrowLine(r)}${i===sel&&r.hits.length?'<ul>'+r.hits.map(h=>`<li>${T[h.type].e} ${esc(T[h.type].l)}${h.note?' – '+esc(h.note):''}</li>`).join('')+'</ul>':''}
   </div></div>`}).join('')+
  '<button class="btn" id="startNav" type="button" style="margin-bottom:10px">Start navigation on Route '+routes[sel].name+'</button>'+
- blockedMsg()+
+ vehNotice()+blockedMsg()+
  (mode==='w'?'<p class="mut">Wheelchair mode uses OSM walking paths and avoids community-reported ramps, stairs and broken footpaths. Always verify on site.</p>':'');
  routeL.clearLayers();let top;
  routes.forEach((r,i)=>{const on=i===sel;if(navOn&&!on)return;
@@ -592,5 +665,5 @@ function render(){
   L.marker(m,{icon:L.divIcon({className:'',iconSize:[0,0],html:`<span class="rl" style="background:${r.col}">${r.name} · ${Math.round(r.eta/60)} min</span>`})}).addTo(routeL).on('click',()=>select(i));});
  top&&top.bringToFront();
 }
-loadReports();page();tinfo();
+loadReports();page();vehUI();
 </script></body></html>
