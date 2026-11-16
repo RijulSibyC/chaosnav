@@ -571,12 +571,12 @@ function blockedMsg(){
 function render(){
  const {f,s,l,allBlocked}=best,ref=f||minBy(routes,r=>r.eta);
  const tile=(ic,lb,r)=>r?`<div class="tile" data-i="${routes.indexOf(r)}"><small>${ic} ${lb}</small><b style="color:${r.col}">Route ${r.name}</b><small>${fT(r.eta)} · ${fD(r.dist)}</small></div>`:`<div class="tile"><small>${ic} ${lb}</small><b>-</b><small>None available</small></div>`;
- $('dash').innerHTML=`<div class="tiles">${tile('🛡',allBlocked?'Least blocked':'Safest',s)}${tile('⚡','Fastest',f)}${tile('🐢','Longest',l)}</div>`+
+ $('dash').innerHTML=`<div class="tiles">${tile('🛡',allBlocked?'Least blocked':'Safest',s)}${tile('⚡','Fastest',f)}${tile('🐢','Farthest',l)}</div>`+
  routes.map((r,i)=>{
   const bd=(t,c)=>`<span class="badge" style="background:${c}">${t}</span>`;
   const d=Math.round((r.eta-ref.eta)/60);
   return `<div class="rt ${i===sel?'on':''}" data-i="${i}"><div class="bar" style="background:${r.col}"></div><div style="flex:1">
-   <div><b>Route ${r.name}</b>${r===s?bd(allBlocked?'Least blocked':'Safest','#059669'):''}${r===f?bd('Fastest','#2563eb'):''}${r===l?bd('Longest','#9333ea'):''}${r.blocked?bd('Blocked','#dc2626'):''}</div>
+   <div><b>Route ${r.name}</b>${r===s?bd(allBlocked?'Least blocked':'Safest','#059669'):''}${r===f?bd('Fastest','#2563eb'):''}${r===l?bd('Farthest','#9333ea'):''}${r.blocked?bd('Blocked','#dc2626'):''}</div>
    <div class="big">${r.blocked?'Not passable':'Arrive '+clock(r.eta)} <span>· ${fT(r.blocked?r.dur:r.eta)}</span></div>
    <div class="mut">📏 ${fD(r.dist)} · ${r.hits.length?'⚠ '+r.hits.length+' issue'+(r.hits.length>1?'s':''):'✓ No reported issues'}${r.dur-r.free>=120?' · traffic +'+Math.round((r.dur-r.free)/60)+' min':''}${r.delay>=60?' · incl. ~'+Math.round(r.delay/60)+' min delay':''}${!r.blocked&&f&&r!==f?' · '+(d>=0?'+':'')+d+' min vs fastest':''}</div>
    ${i===sel&&r.hits.length?'<ul>'+r.hits.map(h=>`<li>${T[h.type].e} ${esc(T[h.type].l)}${h.note?' – '+esc(h.note):''}</li>`).join('')+'</ul>':''}
