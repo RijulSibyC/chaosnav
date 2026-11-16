@@ -2,7 +2,6 @@
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ChaosNav – Smarter Route Planner</title>
-<script>try{var t=localStorage.getItem('chaosnav.theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark')}catch(e){}</script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
 :root{--bg:#f4f6fb;--ink:#0f172a;--mut:#64748b;--line:#e2e8f0;--pri:#2563eb;--ok:#059669;--warn:#d97706;--bad:#dc2626}
@@ -66,38 +65,8 @@ body.nav .pin,body.nav .me{transform:rotate(var(--ctr,0deg))}
 #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;z-index:9999;max-width:90%}
 @media(max-width:800px){main{flex-direction:column-reverse}#panel{width:100%;height:58%}#mapwrap{flex:none;height:42%}}
 
-/* ===== Dark mode ===== */
-body,header,.card,.tile,.rt,.t,.sug,.loc,.info,.chip,.btn.alt,.seg button,input[type=text],textarea,.two input,.two select,.locbtn,.leaflet-popup-content-wrapper,.leaflet-bar a{transition:background-color .3s ease,color .3s ease,border-color .3s ease}
-[data-theme=dark]{color-scheme:dark;--bg:#121212;--ink:#fff;--mut:#B0B0B0;--line:#383838;--pri:#3b82f6}
-[data-theme=dark] header{background:#1E1E1E;border-bottom:1px solid #2c2c2c}
-[data-theme=dark] .chip{background:#2a2a2a}
-[data-theme=dark] .card,[data-theme=dark] .tile,[data-theme=dark] .rt,[data-theme=dark] .sug,[data-theme=dark] #hBar{background:#1E1E1E}
-[data-theme=dark] input[type=text],[data-theme=dark] textarea,[data-theme=dark] .two input,[data-theme=dark] .two select,[data-theme=dark] .seg button,[data-theme=dark] .t,[data-theme=dark] .btn.alt,[data-theme=dark] #hBar button{background:#252525;color:var(--ink)}
-[data-theme=dark] ::placeholder{color:#8a8a8a}
-[data-theme=dark] .seg button.on{background:var(--pri);color:#fff}
-[data-theme=dark] .t.on{background:#1e3a5f}
-[data-theme=dark] .loc{background:#252525}
-[data-theme=dark] .info{background:#2a2410;border-color:#5c4a14;color:#fde68a}
-[data-theme=dark] .sug div:hover,[data-theme=dark] .sug div.on{background:#2a3a52}
-[data-theme=dark] .del{background:#3b1a1a;color:#fca5a5}
-[data-theme=dark] .locbtn{background:#1E1E1E;color:#fff;border-color:#333}
-[data-theme=dark] .locbtn.on{background:var(--pri)}
-[data-theme=dark] .locbtn.free{background:#1e3a5f}
-[data-theme=dark] #hTurn{background:#1E1E1E;border:1px solid #333}
-[data-theme=dark] #toast{background:#252525;border:1px solid #333}
-/* Leaflet widgets */
-[data-theme=dark] .leaflet-container{background:#121212}
-[data-theme=dark] .leaflet-popup-content-wrapper,[data-theme=dark] .leaflet-popup-tip{background:#1E1E1E;color:#fff}
-[data-theme=dark] .leaflet-container a.leaflet-popup-close-button{color:#B0B0B0}
-[data-theme=dark] .leaflet-tooltip{background:#1E1E1E;color:#fff;border-color:#333}
-[data-theme=dark] .leaflet-tooltip-top:before{border-top-color:#1E1E1E}
-[data-theme=dark] .leaflet-bar a{background:#1E1E1E;color:#fff;border-bottom-color:#333}
-[data-theme=dark] .leaflet-bar a:hover{background:#2a2a2a}
-[data-theme=dark] .leaflet-control-attribution{background:rgba(30,30,30,.85);color:#B0B0B0}
-[data-theme=dark] .leaflet-control-attribution a{color:#60a5fa}
-@media(max-width:480px){.chip{padding:4px 8px}#sync{max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
 </style></head><body>
-<header><div class="brand">🧭 Chaos<b>Nav</b></div><div><button id="themeBtn" class="chip" type="button" aria-label="Toggle dark mode" title="Switch to dark mode" style="border:0;color:#fff;cursor:pointer;margin-right:8px;font-size:14px">🌙</button><button id="adminBtn" class="chip" style="border:0;color:#fff;cursor:pointer;margin-right:8px">🔒 Admin</button><span id="sync" class="chip">connecting…</span></div></header>
+<header><div class="brand">🧭 Chaos<b>Nav</b></div><div><button id="adminBtn" class="chip" style="border:0;color:#fff;cursor:pointer;margin-right:8px">🔒 Admin</button><span id="sync" class="chip">connecting…</span></div></header>
 <main>
 <aside id="panel">
  <!-- PAGE 1: planner + dashboard -->
@@ -177,25 +146,8 @@ let navOn=false,navRoute=null,navIdx=0,navB=0,navZoom=18,prevLL=null,offCnt=0,la
 
 // ---------- Map ----------
 const map=L.map('map').setView([12.9716,77.5946],12);
-const tilesLight=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'});
-const tilesDark=L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19,attribution:'© OpenStreetMap contributors © CARTO'});
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(map);
 const repL=L.layerGroup().addTo(map),routeL=L.layerGroup().addTo(map),pinL=L.layerGroup().addTo(map);
-
-// ---------- Theme (light / dark, remembered in localStorage) ----------
-const TK='chaosnav.theme';
-function applyTheme(t,save){
- const dark=t==='dark';
- if(dark)document.documentElement.setAttribute('data-theme','dark');else document.documentElement.removeAttribute('data-theme');
- $('themeBtn').textContent=dark?'☀️':'🌙';
- $('themeBtn').title=dark?'Switch to light mode':'Switch to dark mode';
- const on=dark?tilesDark:tilesLight,off=dark?tilesLight:tilesDark;
- if(map.hasLayer(off))map.removeLayer(off);
- if(!map.hasLayer(on))on.addTo(map);
- if(save)try{localStorage.setItem(TK,t)}catch(e){}
-}
-$('themeBtn').onclick=()=>applyTheme(document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark',true);
-let savedTheme='light';try{savedTheme=localStorage.getItem(TK)==='dark'?'dark':'light'}catch(e){}
-applyTheme(savedTheme);
 
 // ---------- Reports: shared via API (GitHub-backed), LocalStorage fallback ----------
 const lLoad=()=>{try{return JSON.parse(localStorage.getItem(LK)||'[]')}catch(e){return[]}};
